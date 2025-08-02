@@ -1,0 +1,42 @@
+{
+  "version": 3,
+  "cmakeMinimumRequired": {
+    "major": 3,
+    "minor": 16
+  },
+  "configurePresets": [
+    {
+      "name": "x64",
+      "displayName": "x64 (vcpkg)",
+      "generator": "Visual Studio 17 2022",
+      "architecture": "x64",
+      "toolset": "host=x64",
+      "cacheVariables": {
+        "CMAKE_TOOLCHAIN_FILE": "D:/software/vcpkg/scripts/buildsystems/vcpkg.cmake",
+        "VCPKG_TARGET_TRIPLET": "x64-windows"
+      }
+    },
+    {
+      "name": "x64-linux",
+      "displayName": "x64 (vcpkg, Linux)",
+      "generator": "Ninja",
+      "cacheVariables": {
+        "CMAKE_TOOLCHAIN_FILE": "/home/xyy/vcpkg/scripts/buildsystems/vcpkg.cmake",
+        "VCPKG_TARGET_TRIPLET": "x64-linux"
+      }
+    }
+
+  ],
+  "buildPresets": [
+    {
+      "name": "x64",
+      "configurePreset": "x64",
+      "configuration": "RelWithDebInfo"
+    },
+    {
+      "name": "x64-linux",
+      "configurePreset": "x64-linux",
+      "configuration": "Release"
+    }
+  ]
+}

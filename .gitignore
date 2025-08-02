@@ -1,0 +1,4 @@
+out
+*.txt.user
+*.pro.user
+config/*.txt
