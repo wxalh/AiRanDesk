@@ -87,6 +87,9 @@ void WebRtcCli::init()
         m_mediaCapture = new MediaCapture(); // 移除父对象参数
         connect(m_mediaCapture, &MediaCapture::videoFrameReady, this, &WebRtcCli::onVideoFrameReady);
         connect(m_mediaCapture, &MediaCapture::audioFrameReady, this, &WebRtcCli::onAudioFrameReady);
+        
+        // 连接关键帧请求信号
+        connect(this, &WebRtcCli::requestKeyFrameFromCapture, m_mediaCapture, &MediaCapture::requestKeyFrame);
     }
 
     // 初始化WebRTC
@@ -649,6 +652,26 @@ void WebRtcCli::parseFileMsg(const QJsonObject &object)
     {
         // 上传文件现在通过文件通道的二进制数据处理，不再需要输入通道处理
         LOG_INFO("File upload request received, waiting for binary data on file channel");
+    }
+    else if (object.contains("type") && JsonUtil::getString(object, "type") == "request_keyframe")
+    {
+        // 处理来自控制端的关键帧请求
+        LOG_INFO("🔑 Received key frame request from control side");
+        
+        // 通知媒体捕获组件生成关键帧
+        if (m_mediaCapture) {
+            emit requestKeyFrameFromCapture();
+        }
+        
+        // 发送响应确认
+        QJsonObject response = JsonUtil::createObject()
+            .add("type", "keyframe_response")
+            .add("timestamp", QDateTime::currentMSecsSinceEpoch())
+            .add("status", "requested")
+            .build();
+        
+        sendFileTextChannelMessage(response);
+        LOG_INFO("🔑 Sent key frame response to control side");
     }
     else
     {

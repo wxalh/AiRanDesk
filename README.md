@@ -43,15 +43,9 @@ vcpkg install ffmpeg[all-nonfree] libdatachannel[srtp,stdcall,ws] spdlog qt5-bas
 #### 编译
 
 ```cmd
-cmake --preset x64-windows
-cmake --build --preset x64-windows
-```
+cmake -DCMAKE_TOOLCHAIN_FILE=D:/software/vcpkg/scripts/buildsystems/vcpkg.cmake -DVCPKG_TARGET_TRIPLET=x64-windows -S . -B out/build/x64 -G "Visual Studio 17 2022" -T host=x64 -A x64
 
-或者使用手动命令：
-
-```cmd
-cmake -S . -B build -DCMAKE_TOOLCHAIN_FILE=D:/path/to/vcpkg/scripts/buildsystems/vcpkg.cmake -DVCPKG_TARGET_TRIPLET=x64-windows -G "Visual Studio 17 2022" -A x64
-cmake --build build --config Release
+cmake --build out/build/x64 --config RelWithDebInfo --
 ```
 
 ### Linux (Ubuntu)

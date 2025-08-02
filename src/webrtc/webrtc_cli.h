@@ -104,6 +104,9 @@ signals:
 
     // 数据通道事件
     void destroyCli(const QString &m_remoteId);
+    
+    // 媒体控制事件
+    void requestKeyFrameFromCapture(); // 请求媒体捕获生成关键帧
 public slots:
     // 初始化WebRTC连接并创建所有通道
     void init();

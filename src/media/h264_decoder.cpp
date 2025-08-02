@@ -91,6 +91,9 @@ H264Decoder::H264Decoder(QObject *parent)
     , m_hwDeviceCtx(nullptr)
     , m_hwPixelFormat(AV_PIX_FMT_NONE)
     , m_initialized(false)
+    , m_waitingForKeyFrame(true)
+    , m_consecutiveErrors(0)
+    , m_lastGoodFrameTimestamp(0)
 {
 }
 

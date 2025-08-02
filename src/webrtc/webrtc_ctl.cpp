@@ -26,7 +26,12 @@ WebRtcCtl::WebRtcCtl(const QString &remoteId, const QString &remotePwdMd5, bool 
       m_connected(false),
       m_isOnlyFile(isOnlyFile),
       m_sdpSent(false),
-      m_waitingForKeyFrame(true) // 初始时等待关键帧
+      m_waitingForKeyFrame(true), // 初始时等待关键帧
+      m_consecutiveEmptyFrames(0),
+      m_totalFramesReceived(0),
+      m_decodingErrors(0),
+      m_lastValidFrameTime(QDateTime::currentDateTime()),
+      m_keyFrameRequestTimer(new QTimer(this))
 {
     // 初始化ICE服务器配置
     m_host = ConfigUtil->ice_host.toStdString();
@@ -42,6 +47,10 @@ WebRtcCtl::WebRtcCtl(const QString &remoteId, const QString &remotePwdMd5, bool 
             this, &WebRtcCtl::recvDownloadFile);
     connect(m_filePacketUtil.get(), &FilePacketUtil::fileReceived,
             this, &WebRtcCtl::recvDownloadFile);
+
+    // 设置关键帧请求定时器
+    m_keyFrameRequestTimer->setSingleShot(true);
+    connect(m_keyFrameRequestTimer, &QTimer::timeout, this, &WebRtcCtl::requestKeyFrame);
 
     LOG_INFO("created for remote: {}", m_remoteId);
 }
@@ -406,6 +415,17 @@ void WebRtcCtl::setupFileTextChannelCallbacks()
                     if(object.contains("directoryEnd")){
                         QString ctlPath = JsonUtil::getString(object, Constant::KEY_PATH_CTL);
                         emit recvDownloadFile(true, ctlPath);
+                    }
+                } else if (object.contains("type") && JsonUtil::getString(object, "type") == "request_keyframe") {
+                    // 处理关键帧请求（从被控端发送到控制端）
+                    LOG_INFO("🔑 Received key frame request from remote");
+                    // 这里可以添加处理逻辑，比如通知编码器生成关键帧
+                } else if (object.contains("type") && JsonUtil::getString(object, "type") == "keyframe_response") {
+                    // 处理关键帧响应
+                    LOG_INFO("🔑 Received key frame response from remote");
+                    // 停止重试定时器
+                    if (m_keyFrameRequestTimer->isActive()) {
+                        m_keyFrameRequestTimer->stop();
                     }
                 } else {
                     // 处理其他文件相关响应
@@ -1009,12 +1029,27 @@ void WebRtcCtl::processAudioFrame(const rtc::binary &audioData, const rtc::Frame
 void WebRtcCtl::processVideoFrame(const rtc::binary &data, const rtc::FrameInfo &frameInfo)
 {
     LOG_DEBUG("Received video frame: {}", Convert::formatFileSize(data.size()));
+    
+    m_totalFramesReceived++;
 
     if (data.empty())
     {
-        LOG_WARN("Received empty video frame");
+        m_consecutiveEmptyFrames++;
+        LOG_WARN("Received empty video frame (consecutive: {}, total: {})", 
+                m_consecutiveEmptyFrames, m_totalFramesReceived);
+        
+        // 如果连续收到太多空帧，请求关键帧
+        if (m_consecutiveEmptyFrames >= 5) {
+            LOG_WARN("Too many empty frames, requesting key frame");
+            requestKeyFrame();
+            m_consecutiveEmptyFrames = 0; // 重置计数
+        }
         return;
     }
+    
+    // 重置空帧计数
+    m_consecutiveEmptyFrames = 0;
+    m_lastValidFrameTime = QDateTime::currentDateTime();
 
     try
     {
@@ -1024,8 +1059,18 @@ void WebRtcCtl::processVideoFrame(const rtc::binary &data, const rtc::FrameInfo 
         auto currentTime = std::chrono::steady_clock::now();
         auto elapsed = std::chrono::duration_cast<std::chrono::milliseconds>(currentTime - lastDecodeTime);
 
-        // 最小解码间隔33ms（约30fps），避免过于频繁的解码
-        if (elapsed.count() < 33)
+        // 动态调整解码间隔 - 根据网络状况自适应
+        int minInterval = 33; // 默认30fps
+        
+        // 如果解码错误较多，增加间隔
+        if (m_decodingErrors > 10) {
+            minInterval = 50; // 降到20fps
+            LOG_DEBUG("High error rate detected, reducing decode frequency to 20fps");
+        } else if (m_decodingErrors > 5) {
+            minInterval = 40; // 降到25fps
+        }
+
+        if (elapsed.count() < minInterval)
         {
             frameDropCount++;
             if (frameDropCount % 100 == 0)
@@ -1042,17 +1087,32 @@ void WebRtcCtl::processVideoFrame(const rtc::binary &data, const rtc::FrameInfo 
             QImage decodedFrame = m_h264Decoder->decodeFrame(data);
             if (!decodedFrame.isNull())
             {
+                // 成功解码，重置错误计数
+                m_decodingErrors = 0;
+                m_waitingForKeyFrame = false;
+                
                 // 发射信号显示解码后的图像
                 emit videoFrameDecoded(decodedFrame);
                 LOG_DEBUG("Successfully decoded video frame: {}x{}", decodedFrame.width(), decodedFrame.height());
             }
             else
             {
+                // 解码失败处理
+                m_decodingErrors++;
                 static int failureCount = 0;
                 failureCount++;
-                if (failureCount % 50 == 0)
+                
+                if (failureCount % 10 == 0)
                 {
-                    LOG_WARN("Failed to decode video frame (total failures: {})", failureCount);
+                    LOG_WARN("Failed to decode video frame (total failures: {}, errors: {})", 
+                            failureCount, m_decodingErrors);
+                }
+                
+                // 如果解码错误较多，请求关键帧
+                if (m_decodingErrors >= 5 && !m_waitingForKeyFrame) {
+                    LOG_WARN("High decode error rate, requesting key frame");
+                    requestKeyFrame();
+                    m_waitingForKeyFrame = true;
                 }
             }
         }
@@ -1063,6 +1123,51 @@ void WebRtcCtl::processVideoFrame(const rtc::binary &data, const rtc::FrameInfo 
     }
     catch (const std::exception &e)
     {
+        m_decodingErrors++;
         LOG_ERROR("Error processing video frame: {}", e.what());
     }
+}
+
+// 请求关键帧
+void WebRtcCtl::requestKeyFrame()
+{
+    if (!m_fileTextChannel || !m_fileTextChannel->isOpen()) {
+        LOG_WARN("File text channel not available for key frame request");
+        return;
+    }
+    
+    try {
+        QJsonObject keyFrameRequest = JsonUtil::createObject()
+            .add("type", "request_keyframe")
+            .add("timestamp", QDateTime::currentMSecsSinceEpoch())
+            .add("reason", "network_error_recovery")
+            .build();
+        
+        QString message = JsonUtil::toCompactString(keyFrameRequest);
+        m_fileTextChannel->send(message.toStdString());
+        
+        LOG_INFO("🔑 Requested key frame for error recovery via fileTextChannel");
+        
+        // 设置超时重试
+        m_keyFrameRequestTimer->start(2000); // 2秒后再次请求
+        
+    } catch (const std::exception &e) {
+        LOG_ERROR("Failed to send key frame request: {}", e.what());
+    }
+}
+
+// 重置视频状态
+void WebRtcCtl::resetVideoState()
+{
+    m_consecutiveEmptyFrames = 0;
+    m_decodingErrors = 0;
+    m_waitingForKeyFrame = true;
+    m_lastValidFrameTime = QDateTime::currentDateTime();
+    
+    // 停止关键帧请求定时器
+    if (m_keyFrameRequestTimer->isActive()) {
+        m_keyFrameRequestTimer->stop();
+    }
+    
+    LOG_INFO("🔄 Video state reset - waiting for key frame");
 }

@@ -29,6 +29,7 @@ public slots:
     void startCapture(int width, int height, int fps);
     void stopCapture();
     void captureFrame(); // 定时器触发的捕获函数
+    void forceKeyFrame(); // 强制生成关键帧
 
 signals:
     void frameReady(const rtc::binary& h264Data);
@@ -45,6 +46,7 @@ private:
     QMutex m_mutex;
     QTimer* m_captureTimer;
     qint64 m_lastFrameTime; // 上一帧发送时间
+    bool m_forceKeyFrame; // 是否强制生成关键帧
     
     H264Encoder* m_encoder; // H264编码器
 };
@@ -113,6 +115,9 @@ public:
     void stopAudioCapture();
     bool isAudioCapturing() const { return m_isAudioCapturing; }
     
+public slots:
+    void requestKeyFrame(); // 请求生成关键帧
+    
 private slots:
     void onCaptureFrameReady(const rtc::binary& h264Data);
     void onAudioFrameReady(const rtc::binary& audioData);
@@ -141,6 +146,7 @@ signals:
     void startAudioCaptureSignal(int sampleRate, int channels);
     void stopAudioCaptureSignal();
     void frameReceived();
+    void requestKeyFrameSignal(); // 内部信号，传递关键帧请求到工作线程
 };
 
 #endif // MEDIA_CAPTURE_H

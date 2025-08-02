@@ -21,7 +21,7 @@
 
 // 视频捕获工作者实现
 CaptureWorker::CaptureWorker(QObject *parent)
-    : QObject(parent), m_running(false), m_width(1920), m_height(1080), m_fps(10), m_lastFrameTime(0), m_encoder(nullptr), m_captureTimer(nullptr)
+    : QObject(parent), m_running(false), m_width(1920), m_height(1080), m_fps(10), m_lastFrameTime(0), m_forceKeyFrame(false), m_encoder(nullptr), m_captureTimer(nullptr)
 {
     m_encoder = new H264Encoder(this);
     m_captureTimer = new QTimer(this);
@@ -120,6 +120,16 @@ void CaptureWorker::captureFrame()
     if (!m_running)
         return;
 
+    // 检查是否需要强制生成关键帧
+    bool forceKey = false;
+    {
+        QMutexLocker locker(&m_mutex);
+        if (m_forceKeyFrame) {
+            m_forceKeyFrame = false;  // 重置标志
+            forceKey = true;
+        }
+    }
+
     // 截图并编码为H264
     rtc::binary h264Data = captureScreenH264();
     if (!h264Data.empty())
@@ -127,6 +137,10 @@ void CaptureWorker::captureFrame()
         QMutexLocker locker(&m_mutex);
         m_lastFrameTime = QDateTime::currentMSecsSinceEpoch();
         locker.unlock();
+
+        if (forceKey) {
+            LOG_INFO("🔑 Generated key frame in response to request");
+        }
 
         emit frameReady(h264Data);
         LOG_DEBUG("Captured and sent video frame: {}", Convert::formatFileSize(h264Data.size()));
@@ -159,6 +173,13 @@ rtc::binary CaptureWorker::captureScreenH264()
 
     // 使用H264编码器编码
     return m_encoder->encodeFrame(image);
+}
+
+void CaptureWorker::forceKeyFrame()
+{
+    QMutexLocker locker(&m_mutex);
+    m_forceKeyFrame = true;
+    LOG_INFO("🔑 Key frame requested for next capture");
 }
 
 // 音频捕获工作者实现
@@ -472,6 +493,7 @@ void MediaCapture::startCapture(int width, int height, int fps)
     // 连接信号和槽
     connect(this, &MediaCapture::startVideoCapture, m_captureWorker, &CaptureWorker::startCapture);
     connect(this, &MediaCapture::stopVideoCapture, m_captureWorker, &CaptureWorker::stopCapture);
+    connect(this, &MediaCapture::requestKeyFrameSignal, m_captureWorker, &CaptureWorker::forceKeyFrame);
     connect(m_captureWorker, &CaptureWorker::frameReady, this, &MediaCapture::onCaptureFrameReady);
 
     // 当线程结束时清理工作对象
@@ -600,4 +622,14 @@ void MediaCapture::onAudioFrameReady(const rtc::binary &audioData)
 
     // 直接转发音频数据
     emit audioFrameReady(audioData);
+}
+
+void MediaCapture::requestKeyFrame()
+{
+    if (m_isCapturing && m_captureWorker) {
+        LOG_INFO("🔑 MediaCapture: Requesting key frame from capture worker");
+        emit requestKeyFrameSignal();
+    } else {
+        LOG_WARN("Cannot request key frame - capture not active");
+    }
 }

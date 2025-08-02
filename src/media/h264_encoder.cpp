@@ -195,6 +195,11 @@ bool H264Encoder::initializeCodec(const QString& hwAccel)
     m_codecContext->max_b_frames = 0; // 禁用B帧，简化编码
     m_codecContext->keyint_min = 10; // 最小关键帧间隔
     
+    // 网络自适应优化：针对高延迟网络的编码参数
+    m_codecContext->flags |= AV_CODEC_FLAG_LOW_DELAY; // 低延迟模式
+    m_codecContext->flags2 |= AV_CODEC_FLAG2_FAST; // 快速编码
+    m_codecContext->slices = 4; // 使用多片编码，增强错误恢复能力
+    
     // 设置编码预设和调优
     if (hwAccel.isEmpty()) {
         // 软件编码优化 - 重置硬件相关设置
@@ -204,6 +209,8 @@ bool H264Encoder::initializeCodec(const QString& hwAccel)
         LOG_INFO("Setting software encoding parameters: {}x{}, {}fps, {}bps", m_width, m_height, m_fps, m_bitrate);
         av_opt_set(m_codecContext->priv_data, "preset", "fast", 0);
         av_opt_set(m_codecContext->priv_data, "tune", "zerolatency", 0);
+        // 网络自适应：增强错误恢复能力
+        av_opt_set(m_codecContext->priv_data, "x264opts", "no-mbtree:sliced-threads:rc-lookahead=10", 0);
         // 注意：使用码率控制时不要设置crf
         // av_opt_set(m_codecContext->priv_data, "crf", "23", 0);
     } else {

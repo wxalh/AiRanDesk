@@ -68,6 +68,8 @@ private:
     void processAudioFrame(const rtc::binary &audioData, const rtc::FrameInfo &frameInfo);
     void processVideoH264(const rtc::binary &h264Data);
     void tryDecodeAccumulatedFrame();  // 尝试解码累积的帧数据
+    void requestKeyFrame();            // 请求关键帧
+    void resetVideoState();            // 重置视频状态
 
     // 成员变量
     QString m_remoteId;
@@ -105,6 +107,13 @@ private:
     rtc::binary m_h264FrameBuffer;  // 累积NAL单元的缓冲区
     QMutex m_h264BufferMutex;       // 保护缓冲区的互斥锁
     bool m_waitingForKeyFrame;      // 是否等待关键帧
+    
+    // 网络自适应和错误恢复
+    int m_consecutiveEmptyFrames;   // 连续空帧计数
+    int m_totalFramesReceived;      // 总接收帧数
+    int m_decodingErrors;           // 解码错误计数
+    QDateTime m_lastValidFrameTime; // 最后一个有效帧的时间
+    QTimer* m_keyFrameRequestTimer; // 关键帧请求定时器
 
 signals:
     // WebSocket消息发送
