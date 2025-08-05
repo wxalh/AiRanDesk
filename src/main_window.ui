@@ -136,6 +136,27 @@ color: rgb(131,193,224);</string>
      <set>Qt::AlignLeading|Qt::AlignLeft|Qt::AlignVCenter</set>
     </property>
    </widget>
+   <widget class="QCheckBox" name="adaptive_resolution">
+    <property name="geometry">
+     <rect>
+      <x>670</x>
+      <y>349</y>
+      <width>71</width>
+      <height>20</height>
+     </rect>
+    </property>
+    <property name="font">
+     <font>
+      <pointsize>11</pointsize>
+     </font>
+    </property>
+    <property name="text">
+     <string>自适应</string>
+    </property>
+    <property name="checked">
+     <bool>true</bool>
+    </property>
+   </widget>
    <widget class="QPushButton" name="btn_conn">
     <property name="geometry">
      <rect>
@@ -548,6 +569,7 @@ padding: 0 8px;
      <string>正在连接服务器...</string>
     </property>
    </widget>
+   <zorder>adaptive_resolution</zorder>
    <zorder>local_pwd_border</zorder>
    <zorder>local_id_border</zorder>
    <zorder>allow_control_label</zorder>

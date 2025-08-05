@@ -20,6 +20,7 @@ class JsonObjectBuilder
 public:
     JsonObjectBuilder() = default;
     
+    JsonObjectBuilder& add(const QString &key, const char* value);
     JsonObjectBuilder& add(const QString &key, const QString &value);
     JsonObjectBuilder& add(const QString &key, const std::string &value);
     JsonObjectBuilder& add(const std::string &key, const std::string &value);

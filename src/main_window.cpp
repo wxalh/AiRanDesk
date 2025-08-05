@@ -94,7 +94,9 @@ void MainWindow::connDesktopMgr(const QString &remote_id, const QString &remote_
 {
     if (onlineMap.contains(remote_id))
     {
-        ControlWindow *cw = new ControlWindow(remote_id, remote_pwd_md5, &m_ws);
+        // 获取自适应分辨率设置
+        bool adaptiveResolution = ui->adaptive_resolution->isChecked();
+        ControlWindow *cw = new ControlWindow(remote_id, remote_pwd_md5, &m_ws, adaptiveResolution);
         cw->show();
     }
     else
@@ -273,11 +275,24 @@ void MainWindow::onWsCliRecvBinaryMsg(const QByteArray &message)
         }
         int fps = JsonUtil::getInt(object, Constant::KEY_FPS, 15);
         bool isOnlyFile = JsonUtil::getBool(object, Constant::KEY_IS_ONLY_FILE, false);
+        
+        // 检查是否包含控制端最大显示区域信息（自适应分辨率）
+        int controlMaxWidth = -1;  // 默认值-1表示不使用自适应分辨率
+        int controlMaxHeight = -1;
+        
+        if (object.contains("control_max_width") && object.contains("control_max_height")) {
+            controlMaxWidth = JsonUtil::getInt(object, "control_max_width", 1920);
+            controlMaxHeight = JsonUtil::getInt(object, "control_max_height", 1080);
+            LOG_INFO("Received connection request with adaptive resolution - control max display area: {}x{}", 
+                     controlMaxWidth, controlMaxHeight);
+        } else {
+            LOG_INFO("Received connection request without adaptive resolution - will use original resolution");
+        }
 
         QThread *m_rtc_cli_thread = new QThread();
         QString senderName = QString("WebRtcCli_%1_%2").arg(sender, isOnlyFile ? "file" : "desktop");
         m_rtc_cli_thread->setObjectName(senderName);
-        WebRtcCli *m_rtc_cli = new WebRtcCli(sender, fps, isOnlyFile);
+        WebRtcCli *m_rtc_cli = new WebRtcCli(sender, fps, isOnlyFile, controlMaxWidth, controlMaxHeight);
 
         connect(&m_ws, &WsCli::onWsCliRecvBinaryMsg, m_rtc_cli, &WebRtcCli::onWsCliRecvBinaryMsg);
         connect(&m_ws, &WsCli::onWsCliRecvTextMsg, m_rtc_cli, &WebRtcCli::onWsCliRecvTextMsg);

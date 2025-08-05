@@ -103,5 +103,12 @@ int main(int argc, char *argv[])
     {
         w.show();
     }
-    return a.exec();
+    
+    // 确保应用程序正常退出
+    int result = a.exec();
+    
+    // 在应用程序退出前做一些清理
+    LOG_DEBUG("Application is about to exit");
+    
+    return result;
 }

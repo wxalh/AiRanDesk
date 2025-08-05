@@ -19,12 +19,13 @@
  * init pc -> setup tracks and datachannels -> on recv remote sdp ->send remote sdp -> send local sdp
  * -> on remote ice candidates -> send local ice candidates
  */
-WebRtcCtl::WebRtcCtl(const QString &remoteId, const QString &remotePwdMd5, bool isOnlyFile, QObject *parent)
+WebRtcCtl::WebRtcCtl(const QString &remoteId, const QString &remotePwdMd5, bool isOnlyFile, bool adaptiveResolution, QObject *parent)
     : QObject(parent),
       m_remoteId(remoteId),
       m_remotePwdMd5(remotePwdMd5),
       m_connected(false),
       m_isOnlyFile(isOnlyFile),
+      m_adaptiveResolution(adaptiveResolution),
       m_sdpSent(false),
       m_waitingForKeyFrame(true), // 初始时等待关键帧
       m_consecutiveEmptyFrames(0),
@@ -85,18 +86,36 @@ void WebRtcCtl::init()
     setupCallbacks();
 
     // 发送CONNECT消息给被控端
-    QJsonObject connectMsg = JsonUtil::createObject()
+    JsonObjectBuilder connectMsgBuilder = JsonUtil::createObject()
                                  .add(Constant::KEY_ROLE, Constant::ROLE_CTL)
                                  .add(Constant::KEY_TYPE, Constant::TYPE_CONNECT)
                                  .add(Constant::KEY_RECEIVER, m_remoteId)
                                  .add(Constant::KEY_RECEIVER_PWD, m_remotePwdMd5)
                                  .add(Constant::KEY_SENDER, ConfigUtil->local_id)
                                  .add(Constant::KEY_IS_ONLY_FILE, m_isOnlyFile)
-                                 .add(Constant::KEY_FPS, ConfigUtil->fps)
-                                 .build();
+                                 .add(Constant::KEY_FPS, ConfigUtil->fps);
 
+    // 如果启用了自适应分辨率，则包含控制端可显示的最大区域信息
+    if (m_adaptiveResolution) {
+        QScreen *screen = QApplication::primaryScreen();
+        QRect screenGeometry = screen ? screen->availableGeometry() : QRect(0, 0, 1920, 1080);
+        
+        // 计算控制端窗口能够显示的最大内容区域（减去标题栏等UI开销）
+        int titleBarHeight = 30; // 估算标题栏高度
+        int maxContentWidth = screenGeometry.width() - 20;  // 减去边距
+        int maxContentHeight = screenGeometry.height() - titleBarHeight; // 减去各种UI开销
+        
+        connectMsgBuilder = connectMsgBuilder.add("control_max_width", maxContentWidth)
+                                           .add("control_max_height", maxContentHeight);
+        
+        LOG_INFO("Sending CONNECT message with adaptive resolution - max display area: {}x{}", 
+                 maxContentWidth, maxContentHeight);
+    } else {
+        LOG_INFO("Sending CONNECT message without adaptive resolution - client will use original resolution");
+    }
+
+    QJsonObject connectMsg = connectMsgBuilder.build();
     QString message = JsonUtil::toCompactString(connectMsg);
-    LOG_INFO("Sending CONNECT message to client: {}", message);
     emit sendWsCliTextMsg(message);
 }
 
@@ -764,6 +783,7 @@ void WebRtcCtl::uploadDirectory(const QString &ctlPath, const QString &cliPath)
 
 void WebRtcCtl::destroy()
 {
+    LOG_DEBUG("WebRtcCtl destroy started");
     m_connected = false;
 
     // 清理文件分包工具
@@ -772,9 +792,18 @@ void WebRtcCtl::destroy()
         m_filePacketUtil = nullptr;
     }
 
-    // 清理数据通道
+    // 清理数据通道（按顺序清理）
+    if (m_inputChannel)
+    {
+        LOG_DEBUG("Cleaning up input channel");
+        m_inputChannel->resetCallbacks();
+        m_inputChannel->close();
+        m_inputChannel = nullptr;
+    }
+
     if (m_fileChannel)
     {
+        LOG_DEBUG("Cleaning up file channel");
         m_fileChannel->resetCallbacks();
         m_fileChannel->close();
         m_fileChannel = nullptr;
@@ -782,46 +811,44 @@ void WebRtcCtl::destroy()
 
     if (m_fileTextChannel)
     {
+        LOG_DEBUG("Cleaning up file text channel");
         m_fileTextChannel->resetCallbacks();
         m_fileTextChannel->close();
         m_fileTextChannel = nullptr;
     }
 
-    if (m_inputChannel)
-    {
-        m_inputChannel->resetCallbacks();
-        m_inputChannel->close();
-        m_inputChannel = nullptr;
-    }
-
     // 清理轨道
-    if (m_videoTrack)
-    {
-        m_videoTrack->resetCallbacks();
-        m_videoTrack->close();
-        m_videoTrack = nullptr;
-    }
-
     if (m_audioTrack)
     {
+        LOG_DEBUG("Cleaning up audio track");
         m_audioTrack->resetCallbacks();
         m_audioTrack->close();
         m_audioTrack = nullptr;
     }
 
-    // 清理PeerConnection
-    if (m_peerConnection)
+    if (m_videoTrack)
     {
-        m_peerConnection->resetCallbacks();
-        m_peerConnection->close();
-        m_peerConnection = nullptr;
+        LOG_DEBUG("Cleaning up video track");
+        m_videoTrack->resetCallbacks();
+        m_videoTrack->close();
+        m_videoTrack = nullptr;
     }
 
     // 清理媒体播放器
     if (m_mediaPlayer)
     {
+        LOG_DEBUG("Stopping media player");
         m_mediaPlayer->stopPlayback();
         m_mediaPlayer = nullptr;
+    }
+
+    // 最后清理PeerConnection
+    if (m_peerConnection)
+    {
+        LOG_DEBUG("Cleaning up peer connection");
+        m_peerConnection->resetCallbacks();
+        m_peerConnection->close();
+        m_peerConnection = nullptr;
     }
 
     LOG_INFO("WebRtcCtl destroyed");
@@ -1131,22 +1158,25 @@ void WebRtcCtl::processVideoFrame(const rtc::binary &data, const rtc::FrameInfo 
 // 请求关键帧
 void WebRtcCtl::requestKeyFrame()
 {
-    if (!m_fileTextChannel || !m_fileTextChannel->isOpen()) {
-        LOG_WARN("File text channel not available for key frame request");
+    if (!m_inputChannel || !m_inputChannel->isOpen()) {
+        LOG_WARN("Input channel not available for key frame request");
         return;
     }
     
     try {
         QJsonObject keyFrameRequest = JsonUtil::createObject()
-            .add("type", "request_keyframe")
+            .add(Constant::KEY_MSGTYPE, "request_keyframe")
+            .add(Constant::KEY_SENDER, ConfigUtil->local_id)
+            .add(Constant::KEY_RECEIVER, m_remoteId)
+            .add(Constant::KEY_RECEIVER_PWD, m_remotePwdMd5)
             .add("timestamp", QDateTime::currentMSecsSinceEpoch())
             .add("reason", "network_error_recovery")
             .build();
         
         QString message = JsonUtil::toCompactString(keyFrameRequest);
-        m_fileTextChannel->send(message.toStdString());
+        m_inputChannel->send(message.toStdString());
         
-        LOG_INFO("🔑 Requested key frame for error recovery via fileTextChannel");
+        LOG_INFO("🔑 Requested key frame for error recovery via inputChannel");
         
         // 设置超时重试
         m_keyFrameRequestTimer->start(2000); // 2秒后再次请求

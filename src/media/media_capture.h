@@ -30,6 +30,8 @@ public slots:
     void stopCapture();
     void captureFrame(); // 定时器触发的捕获函数
     void forceKeyFrame(); // 强制生成关键帧
+    void setResolution(int width, int height); // 动态设置分辨率
+    void setFps(int fps); // 动态设置帧率
 
 signals:
     void frameReady(const rtc::binary& h264Data);
@@ -40,9 +42,11 @@ private:
     rtc::binary captureScreenH264();
     
     bool m_running;
-    int m_width;
-    int m_height;
+    int m_width;        // 编码器分辨率
+    int m_height;       // 编码器分辨率
     int m_fps;
+    int m_screenWidth;  // 实际屏幕分辨率
+    int m_screenHeight; // 实际屏幕分辨率
     QMutex m_mutex;
     QTimer* m_captureTimer;
     qint64 m_lastFrameTime; // 上一帧发送时间
@@ -110,6 +114,10 @@ public:
     void stopCapture();
     bool isCapturing() const { return m_isCapturing; }
     
+    // 动态设置分辨率和帧率
+    void setResolution(int width, int height);
+    void setFps(int fps);
+    
     // 启动音频捕获
     void startAudioCapture(int sampleRate = 44100, int channels = 2);
     void stopAudioCapture();
@@ -147,6 +155,8 @@ signals:
     void stopAudioCaptureSignal();
     void frameReceived();
     void requestKeyFrameSignal(); // 内部信号，传递关键帧请求到工作线程
+    void setResolutionSignal(int width, int height); // 内部信号，传递分辨率设置到工作线程
+    void setFpsSignal(int fps); // 内部信号，传递帧率设置到工作线程
 };
 
 #endif // MEDIA_CAPTURE_H

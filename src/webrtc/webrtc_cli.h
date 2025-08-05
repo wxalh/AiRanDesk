@@ -41,7 +41,7 @@ class WebRtcCli : public QObject
 {
     Q_OBJECT
 public:
-    WebRtcCli(const QString &remoteId, int fps, bool isOnlyFile, QObject *parent = nullptr);
+    WebRtcCli(const QString &remoteId, int fps, bool isOnlyFile, int controlMaxWidth = 1920, int controlMaxHeight = 1080, QObject *parent = nullptr);
     ~WebRtcCli();
 
     // 解析来自WebSocket的消息
@@ -97,6 +97,10 @@ private:
     std::string m_password;
     int m_screen_width;
     int m_screen_height;
+    
+    // 编码分辨率（根据控制端屏幕分辨率智能计算）
+    int m_encode_width;
+    int m_encode_height;
 signals:
     // WebSocket消息发送
     void sendWsCliBinaryMsg(const QByteArray &message);
@@ -146,6 +150,9 @@ private:
     void sendFileChannelMessage(const QJsonObject &message);
     void sendFileTextChannelMessage(const QJsonObject &message);
     void sendInputChannelMessage(const QJsonObject &message);
+    
+    // 智能分辨率计算
+    void calculateOptimalResolution(int controlMaxWidth, int controlMaxHeight);
 
     // 分包数据处理（使用QByteArray存储分包）
     QMap<QString, QVector<QByteArray>> m_uploadFragments;

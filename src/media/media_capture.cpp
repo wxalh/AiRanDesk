@@ -21,8 +21,15 @@
 
 // 视频捕获工作者实现
 CaptureWorker::CaptureWorker(QObject *parent)
-    : QObject(parent), m_running(false), m_width(1920), m_height(1080), m_fps(10), m_lastFrameTime(0), m_forceKeyFrame(false), m_encoder(nullptr), m_captureTimer(nullptr)
+    : QObject(parent), m_running(false), m_width(1920), m_height(1080), m_fps(10),
+      m_lastFrameTime(0), m_forceKeyFrame(false), m_encoder(nullptr), m_captureTimer(nullptr)
 {
+    // 获取实际屏幕分辨率
+    QScreen *screen = QGuiApplication::primaryScreen();
+    QRect screenGeometry = screen ? screen->geometry() : QRect(0, 0, 1920, 1080);
+    m_screenWidth = screenGeometry.width();
+    m_screenHeight = screenGeometry.height();
+
     m_encoder = new H264Encoder(this);
     m_captureTimer = new QTimer(this);
     connect(m_captureTimer, &QTimer::timeout, this, &CaptureWorker::captureFrame);
@@ -54,24 +61,18 @@ void CaptureWorker::startCapture(int width, int height, int fps)
         {
             LOG_INFO("Available hardware encoders: {}", availableAccels.join(", "));
 
-            // 优先级：Intel QSV > NVIDIA > AMD
-            QStringList preferredOrder = {"qsv", "nvenc", "amf"};
-
-            for (const QString &preferred : preferredOrder)
+            for (const QString &preferred : availableAccels)
             {
-                if (availableAccels.contains(preferred))
+                LOG_INFO("Attempting to initialize H264 encoder with {} acceleration", preferred);
+                if (m_encoder->initialize(width, height, fps, bitrate))
                 {
-                    LOG_INFO("Attempting to initialize H264 encoder with {} acceleration", preferred);
-                    if (m_encoder->initialize(width, height, fps, bitrate))
-                    {
-                        LOG_INFO("Successfully initialized H264 encoder with {} hardware acceleration", preferred);
-                        encoderInitialized = true;
-                        break;
-                    }
-                    else
-                    {
-                        LOG_WARN("Failed to initialize H264 encoder with {} acceleration", preferred);
-                    }
+                    LOG_INFO("Successfully initialized H264 encoder with {} hardware acceleration", preferred);
+                    encoderInitialized = true;
+                    break;
+                }
+                else
+                {
+                    LOG_WARN("Failed to initialize H264 encoder with {} acceleration", preferred);
                 }
             }
         }
@@ -124,8 +125,9 @@ void CaptureWorker::captureFrame()
     bool forceKey = false;
     {
         QMutexLocker locker(&m_mutex);
-        if (m_forceKeyFrame) {
-            m_forceKeyFrame = false;  // 重置标志
+        if (m_forceKeyFrame)
+        {
+            m_forceKeyFrame = false; // 重置标志
             forceKey = true;
         }
     }
@@ -138,7 +140,8 @@ void CaptureWorker::captureFrame()
         m_lastFrameTime = QDateTime::currentMSecsSinceEpoch();
         locker.unlock();
 
-        if (forceKey) {
+        if (forceKey)
+        {
             LOG_INFO("🔑 Generated key frame in response to request");
         }
 
@@ -155,7 +158,7 @@ rtc::binary CaptureWorker::captureScreenH264()
         return rtc::binary();
     }
 
-    // 截取屏幕
+    // 截取完整屏幕
     QPixmap pixmap = screen->grabWindow(0);
     if (pixmap.isNull())
     {
@@ -165,13 +168,15 @@ rtc::binary CaptureWorker::captureScreenH264()
     // 转换为QImage
     QImage image = pixmap.toImage();
 
-    // 如果需要调整大小，保持高质量缩放
+    // 缩放到编码器的分辨率（编码器已经用正确的分辨率初始化）
     if (image.width() != m_width || image.height() != m_height)
     {
         image = image.scaled(m_width, m_height, Qt::IgnoreAspectRatio, Qt::SmoothTransformation);
+        LOG_DEBUG("📺 Scaled screen capture from {}x{} to {}x{} for encoding",
+                  pixmap.width(), pixmap.height(), m_width, m_height);
     }
 
-    // 使用H264编码器编码
+    // 使用H264编码器编码（编码器已经用m_width和m_height初始化）
     return m_encoder->encodeFrame(image);
 }
 
@@ -180,6 +185,57 @@ void CaptureWorker::forceKeyFrame()
     QMutexLocker locker(&m_mutex);
     m_forceKeyFrame = true;
     LOG_INFO("🔑 Key frame requested for next capture");
+}
+
+void CaptureWorker::setResolution(int width, int height)
+{
+    QMutexLocker locker(&m_mutex);
+    if (m_width != width || m_height != height)
+    {
+        int oldWidth = m_width;
+        int oldHeight = m_height;
+        m_width = width;
+        m_height = height;
+        LOG_INFO("📺 CaptureWorker: Resolution changed from {}x{} to {}x{}",
+                 oldWidth, oldHeight, width, height);
+
+        // 采用更稳定的策略：不重新初始化编码器，而是保持编码器使用标准分辨率
+        // 在captureScreenH264中进行图像缩放，这样可以避免编码器重新初始化的复杂性
+        if (m_running)
+        {
+            // 强制生成关键帧以立即应用新分辨率的视频流
+            m_forceKeyFrame = true;
+            LOG_INFO("📺 Resolution change applied via image scaling, encoder remains at stable resolution");
+            LOG_INFO("📺 New frames will be scaled from screen resolution to {}x{} before encoding", width, height);
+        }
+    }
+}
+
+void CaptureWorker::setFps(int fps)
+{
+    QMutexLocker locker(&m_mutex);
+    if (m_fps != fps)
+    {
+        int oldFps = m_fps;
+        m_fps = fps;
+        LOG_INFO("🎬 CaptureWorker: FPS changed from {} to {}", oldFps, fps);
+
+        // 如果正在运行，立即更新定时器间隔
+        if (m_running)
+        {
+            int interval = 1000 / fps; // ms
+            if (m_captureTimer && m_captureTimer->isActive())
+            {
+                m_captureTimer->stop();
+                m_captureTimer->start(interval);
+                LOG_INFO("🎬 Updated capture timer interval to {} ms", interval);
+            }
+
+            // 不重新初始化编码器，编码器的FPS参数不影响实际捕获频率
+            // 实际的FPS由定时器控制，编码器保持原始初始化状态
+            LOG_INFO("🎬 FPS change applied via timer, encoder parameters unchanged");
+        }
+    }
 }
 
 // 音频捕获工作者实现
@@ -319,7 +375,8 @@ void AudioCaptureWorker::checkAudioLevel()
         {
             // 降低日志级别，避免过多警告输出
             static int warnCount = 0;
-            if (warnCount++ % 100 == 0) { // 每100次只打印一次
+            if (warnCount++ % 100 == 0)
+            { // 每100次只打印一次
                 LOG_DEBUG("Audio input state is not active: {} (count: {})", static_cast<int>(state), warnCount);
             }
         }
@@ -399,14 +456,17 @@ bool AudioCaptureWorker::initializeAudio()
         LOG_ERROR("5. 找到'立体声混音'，右键启用并设为默认设备");
         LOG_ERROR("6. 如果没有立体声混音，请更新音频驱动程序");
         LOG_ERROR("================================================");
-        
+
         // 尝试使用默认麦克风作为临时方案（会有警告）
         QAudioDeviceInfo defaultDevice = QAudioDeviceInfo::defaultInputDevice();
-        if (!defaultDevice.isNull()) {
+        if (!defaultDevice.isNull())
+        {
             LOG_WARN("临时使用默认输入设备: {}", defaultDevice.deviceName());
             LOG_WARN("注意：这将捕获麦克风而不是系统音频！");
             targetDevice = defaultDevice; // 使用默认设备
-        } else {
+        }
+        else
+        {
             LOG_ERROR("没有任何可用的音频输入设备！");
             return false; // 完全失败
         }
@@ -494,6 +554,8 @@ void MediaCapture::startCapture(int width, int height, int fps)
     connect(this, &MediaCapture::startVideoCapture, m_captureWorker, &CaptureWorker::startCapture);
     connect(this, &MediaCapture::stopVideoCapture, m_captureWorker, &CaptureWorker::stopCapture);
     connect(this, &MediaCapture::requestKeyFrameSignal, m_captureWorker, &CaptureWorker::forceKeyFrame);
+    connect(this, &MediaCapture::setResolutionSignal, m_captureWorker, &CaptureWorker::setResolution);
+    connect(this, &MediaCapture::setFpsSignal, m_captureWorker, &CaptureWorker::setFps);
     connect(m_captureWorker, &CaptureWorker::frameReady, this, &MediaCapture::onCaptureFrameReady);
 
     // 当线程结束时清理工作对象
@@ -626,10 +688,47 @@ void MediaCapture::onAudioFrameReady(const rtc::binary &audioData)
 
 void MediaCapture::requestKeyFrame()
 {
-    if (m_isCapturing && m_captureWorker) {
+    if (m_isCapturing && m_captureWorker)
+    {
         LOG_INFO("🔑 MediaCapture: Requesting key frame from capture worker");
         emit requestKeyFrameSignal();
-    } else {
+    }
+    else
+    {
         LOG_WARN("Cannot request key frame - capture not active");
+    }
+}
+
+void MediaCapture::setResolution(int width, int height)
+{
+    if (m_isCapturing && m_captureWorker)
+    {
+        m_width = width;
+        m_height = height;
+        LOG_INFO("📺 MediaCapture: Setting resolution to {}x{}", width, height);
+        emit setResolutionSignal(width, height);
+    }
+    else
+    {
+        LOG_WARN("Cannot set resolution - capture not active");
+        // 保存参数，下次启动时使用
+        m_width = width;
+        m_height = height;
+    }
+}
+
+void MediaCapture::setFps(int fps)
+{
+    if (m_isCapturing && m_captureWorker)
+    {
+        m_fps = std::max(1, std::min(fps, 60)); // 限制帧率在1-60之间
+        LOG_INFO("🎬 MediaCapture: Setting FPS to {}", m_fps);
+        emit setFpsSignal(m_fps);
+    }
+    else
+    {
+        LOG_WARN("Cannot set FPS - capture not active");
+        // 保存参数，下次启动时使用
+        m_fps = std::max(1, std::min(fps, 60));
     }
 }

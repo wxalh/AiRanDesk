@@ -40,7 +40,7 @@ class WebRtcCtl : public QObject
     Q_OBJECT
 public:
     // 构造函数：传入远程ID、远程密码MD5
-    WebRtcCtl(const QString &remoteId, const QString &remotePwdMd5, bool isOnlyFile, QObject *parent = nullptr);
+    WebRtcCtl(const QString &remoteId, const QString &remotePwdMd5, bool isOnlyFile, bool adaptiveResolution = true, QObject *parent = nullptr);
     ~WebRtcCtl();
     
     // 解析来自WebSocket的消息
@@ -75,6 +75,7 @@ private:
     QString m_remoteId;
     QString m_remotePwdMd5;
     bool m_isOnlyFile; // 是否仅文件传输模式
+    bool m_adaptiveResolution; // 是否启用自适应分辨率
     
     // WebRTC相关
     std::shared_ptr<rtc::PeerConnection> m_peerConnection;

@@ -22,7 +22,7 @@
  * -> on remote sdp -> set remote description -> send ice candidates
  * -> on ice candidate -> add ice candidate
  */
-WebRtcCli::WebRtcCli(const QString &remoteId, int fps, bool isOnlyFile, QObject *parent)
+WebRtcCli::WebRtcCli(const QString &remoteId, int fps, bool isOnlyFile, int controlMaxWidth, int controlMaxHeight, QObject *parent)
     : QObject(parent),
       m_remoteId(remoteId),
       m_isOnlyFile(isOnlyFile), // 默认不是仅文件传输
@@ -39,6 +39,10 @@ WebRtcCli::WebRtcCli(const QString &remoteId, int fps, bool isOnlyFile, QObject 
     QRect screenGeometry = screen ? screen->geometry() : QRect(0, 0, 1920, 1080);
     m_screen_width = screenGeometry.width();
     m_screen_height = screenGeometry.height();
+    
+    // 根据控制端最大显示区域和被控端实际分辨率计算合适的编码分辨率
+    calculateOptimalResolution(controlMaxWidth, controlMaxHeight);
+    
     // 初始化ICE服务器配置
     m_host = ConfigUtil->ice_host.toStdString();
     m_port = (uint16_t)ConfigUtil->ice_port;
@@ -653,26 +657,6 @@ void WebRtcCli::parseFileMsg(const QJsonObject &object)
         // 上传文件现在通过文件通道的二进制数据处理，不再需要输入通道处理
         LOG_INFO("File upload request received, waiting for binary data on file channel");
     }
-    else if (object.contains("type") && JsonUtil::getString(object, "type") == "request_keyframe")
-    {
-        // 处理来自控制端的关键帧请求
-        LOG_INFO("🔑 Received key frame request from control side");
-        
-        // 通知媒体捕获组件生成关键帧
-        if (m_mediaCapture) {
-            emit requestKeyFrameFromCapture();
-        }
-        
-        // 发送响应确认
-        QJsonObject response = JsonUtil::createObject()
-            .add("type", "keyframe_response")
-            .add("timestamp", QDateTime::currentMSecsSinceEpoch())
-            .add("status", "requested")
-            .build();
-        
-        sendFileTextChannelMessage(response);
-        LOG_INFO("🔑 Sent key frame response to control side");
-    }
     else
     {
         LOG_WARNING("parseFileMsg: Unknown message type: {}", msgType);
@@ -709,6 +693,28 @@ void WebRtcCli::parseInputMsg(const QJsonObject &object)
     {
         // 处理键盘事件
         handleKeyboardEvent(object);
+    }
+    else if (msgType == "request_keyframe")
+    {
+        // 处理来自控制端的关键帧请求
+        LOG_INFO("🔑 Received key frame request from control side");
+        
+        // 通知媒体捕获组件生成关键帧
+        if (m_mediaCapture) {
+            emit requestKeyFrameFromCapture();
+        }
+        
+        // 发送响应确认
+        QJsonObject response = JsonUtil::createObject()
+            .add(Constant::KEY_MSGTYPE, "keyframe_response")
+            .add(Constant::KEY_SENDER, ConfigUtil->local_id)
+            .add(Constant::KEY_RECEIVER, m_remoteId)
+            .add("timestamp", QDateTime::currentMSecsSinceEpoch())
+            .add("status", "requested")
+            .build();
+        
+        sendInputChannelMessage(response);
+        LOG_INFO("🔑 Sent key frame response to control side");
     }
     else
     {
@@ -773,8 +779,12 @@ void WebRtcCli::startMediaCapture()
 
     try
     {
-        LOG_INFO("Starting media capture");
-        m_mediaCapture->startCapture(m_screen_width, m_screen_height, m_fps);
+        LOG_INFO("Starting media capture with intelligent resolution selection");
+        
+        // 使用智能计算的编码分辨率
+        m_mediaCapture->startCapture(m_encode_width, m_encode_height, m_fps);
+        LOG_INFO("Media capture started with intelligent resolution: {}x{}, local screen: {}x{}", 
+                 m_encode_width, m_encode_height, m_screen_width, m_screen_height);
         // m_mediaCapture->startAudioCapture();
         LOG_INFO("Media capture started successfully");
     }
@@ -1188,4 +1198,49 @@ void WebRtcCli::sendInputChannelMessage(const QJsonObject &message)
     {
         LOG_ERROR("Failed to send input channel message: {}", e.what());
     }
+}
+
+void WebRtcCli::calculateOptimalResolution(int controlMaxWidth, int controlMaxHeight)
+{
+    LOG_INFO("Calculating optimal encoding resolution - Control max display area: {}x{}, Local screen: {}x{}", 
+             controlMaxWidth, controlMaxHeight, m_screen_width, m_screen_height);
+    
+    // 如果控制端没有发送最大显示区域信息（-1），则使用被控端原始分辨率
+    if (controlMaxWidth == -1 || controlMaxHeight == -1) {
+        m_encode_width = m_screen_width;
+        m_encode_height = m_screen_height;
+        LOG_INFO("Using original local screen resolution: {}x{} (adaptive resolution disabled)", 
+                 m_encode_width, m_encode_height);
+    }
+    // 比较被控端实际分辨率和控制端最大显示区域，选择较小的
+    else if (m_screen_width <= controlMaxWidth && m_screen_height <= controlMaxHeight) {
+        // 被控端分辨率小于等于控制端显示区域，使用被控端实际分辨率
+        m_encode_width = m_screen_width;
+        m_encode_height = m_screen_height;
+        LOG_INFO("Using local screen resolution: {}x{} (fits within control display area)", 
+                 m_encode_width, m_encode_height);
+    } else {
+        // 被控端分辨率大于控制端显示区域，需要按比例缩放保持宽高比
+        double localAspectRatio = (double)m_screen_width / m_screen_height;
+        double controlAspectRatio = (double)controlMaxWidth / controlMaxHeight;
+        
+        if (localAspectRatio > controlAspectRatio) {
+            // 被控端更宽，以控制端宽度为准，按比例计算高度
+            m_encode_width = controlMaxWidth;
+            m_encode_height = (int)(controlMaxWidth / localAspectRatio);
+        } else {
+            // 被控端更高，以控制端高度为准，按比例计算宽度
+            m_encode_height = controlMaxHeight;
+            m_encode_width = (int)(controlMaxHeight * localAspectRatio);
+        }
+        
+        LOG_INFO("Scaled to maintain aspect ratio: {}x{} (local aspect: {:.3f}, control aspect: {:.3f})", 
+                 m_encode_width, m_encode_height, localAspectRatio, controlAspectRatio);
+    }
+    
+    // 确保编码分辨率是偶数（H264编码要求）
+    m_encode_width = (m_encode_width + 1) & ~1;  // 向上取偶数
+    m_encode_height = (m_encode_height + 1) & ~1; // 向上取偶数
+    
+    LOG_INFO("Final encoding resolution (adjusted for H264): {}x{}", m_encode_width, m_encode_height);
 }

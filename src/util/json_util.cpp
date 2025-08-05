@@ -180,7 +180,13 @@ QMap<QString, QVariant> JsonUtil::json2Map(const QString &str)
 
 // === JsonObjectBuilder实现 ===
 
-JsonObjectBuilder& JsonObjectBuilder::add(const QString &key, const QString &value)
+JsonObjectBuilder &JsonObjectBuilder::add(const QString &key, const char *value)
+{
+    m_object.insert(key, QString::fromUtf8(value));
+    return *this;
+}
+
+JsonObjectBuilder &JsonObjectBuilder::add(const QString &key, const QString &value)
 {
     m_object.insert(key, value);
     return *this;

@@ -90,8 +90,8 @@ QStringList H264Encoder::getAvailableHWAccels()
     
     // 检查常见的硬件加速器，按优先级排序
     const char* accelNames[] = {
-        "qsv",        // Intel Quick Sync (优先检测)
         "nvenc",      // NVIDIA
+        "qsv",        // Intel Quick Sync (优先检测)
         "amf",        // AMD
         "videotoolbox", // macOS
         nullptr
@@ -116,6 +116,7 @@ bool H264Encoder::initialize(int width, int height, int fps, int bitrate)
     QMutexLocker locker(&m_mutex);
     
     if (m_initialized) {
+        LOG_INFO("Encoder already initialized, cleaning up first");
         cleanup();
     }
     
@@ -206,6 +207,29 @@ bool H264Encoder::initializeCodec(const QString& hwAccel)
         m_codecContext->pix_fmt = AV_PIX_FMT_YUV420P;
         m_hwPixelFormat = AV_PIX_FMT_NONE;  // 确保不使用硬件传输
         m_hwDeviceCtx = nullptr;             // 确保不使用硬件设备
+        
+        // 验证分辨率参数 - 确保分辨率是偶数（H264要求）
+        if (m_width % 2 != 0 || m_height % 2 != 0) {
+            LOG_WARN("Adjusting resolution from {}x{} to make it even for H264 compatibility", m_width, m_height);
+            m_width = (m_width + 1) & ~1;  // 向上取偶数
+            m_height = (m_height + 1) & ~1; // 向上取偶数
+            m_codecContext->width = m_width;
+            m_codecContext->height = m_height;
+        }
+        
+        // 验证比特率是否合理
+        int minBitrate = m_width * m_height * m_fps * 0.05; // 最小比特率
+        int maxBitrate = m_width * m_height * m_fps * 0.5;  // 最大比特率
+        if (m_bitrate < minBitrate) {
+            m_bitrate = minBitrate;
+            m_codecContext->bit_rate = m_bitrate;
+            LOG_WARN("Adjusted bitrate to minimum safe value: {}", m_bitrate);
+        } else if (m_bitrate > maxBitrate) {
+            m_bitrate = maxBitrate;
+            m_codecContext->bit_rate = m_bitrate;
+            LOG_WARN("Adjusted bitrate to maximum safe value: {}", m_bitrate);
+        }
+        
         LOG_INFO("Setting software encoding parameters: {}x{}, {}fps, {}bps", m_width, m_height, m_fps, m_bitrate);
         av_opt_set(m_codecContext->priv_data, "preset", "fast", 0);
         av_opt_set(m_codecContext->priv_data, "tune", "zerolatency", 0);
@@ -226,8 +250,46 @@ bool H264Encoder::initializeCodec(const QString& hwAccel)
     if (ret < 0) {
         char errbuf[AV_ERROR_MAX_STRING_SIZE];
         av_strerror(ret, errbuf, sizeof(errbuf));
-        LOG_ERROR("Could not open codec: {}", errbuf);
-        return false;
+        LOG_ERROR("Could not open codec {} ({}x{}, {}fps, {}bps): {} (error code: {})", 
+                 codecName, m_width, m_height, m_fps, m_bitrate, errbuf, ret);
+        
+        // 如果是软件编码器，尝试使用更保守的参数
+        if (hwAccel.isEmpty() && ret == AVERROR(EINVAL)) {
+            LOG_WARN("Trying with more conservative software encoding parameters");
+            
+            // 重置编码器上下文
+            avcodec_free_context(&m_codecContext);
+            m_codecContext = avcodec_alloc_context3(m_codec);
+            if (!m_codecContext) {
+                LOG_ERROR("Could not allocate video codec context for retry");
+                return false;
+            }
+            
+            // 使用更保守的参数
+            m_codecContext->bit_rate = m_width * m_height * m_fps * 0.1; // 更低的比特率
+            m_codecContext->width = m_width;
+            m_codecContext->height = m_height;
+            m_codecContext->time_base = AVRational{1, m_fps};
+            m_codecContext->framerate = AVRational{m_fps, 1};
+            m_codecContext->gop_size = 60; // 更大的GOP
+            m_codecContext->max_b_frames = 0;
+            m_codecContext->pix_fmt = AV_PIX_FMT_YUV420P;
+            
+            // 更简单的设置
+            av_opt_set(m_codecContext->priv_data, "preset", "ultrafast", 0);
+            av_opt_set(m_codecContext->priv_data, "profile", "baseline", 0);
+            
+            ret = avcodec_open2(m_codecContext, m_codec, nullptr);
+            if (ret < 0) {
+                av_strerror(ret, errbuf, sizeof(errbuf));
+                LOG_ERROR("Failed even with conservative parameters: {}", errbuf);
+                return false;
+            } else {
+                LOG_INFO("Successfully opened codec with conservative parameters");
+            }
+        } else {
+            return false;
+        }
     }
     
     // 分配帧 - QSV编码器的帧将在编码时动态分配
