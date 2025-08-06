@@ -19,13 +19,15 @@
  * init pc -> setup tracks and datachannels -> on recv remote sdp ->send remote sdp -> send local sdp
  * -> on remote ice candidates -> send local ice candidates
  */
-WebRtcCtl::WebRtcCtl(const QString &remoteId, const QString &remotePwdMd5, bool isOnlyFile, bool adaptiveResolution, QObject *parent)
+WebRtcCtl::WebRtcCtl(const QString &remoteId, const QString &remotePwdMd5,
+                     bool isOnlyFile, bool adaptiveResolution, bool onlyRelay, QObject *parent)
     : QObject(parent),
       m_remoteId(remoteId),
       m_remotePwdMd5(remotePwdMd5),
       m_connected(false),
       m_isOnlyFile(isOnlyFile),
       m_adaptiveResolution(adaptiveResolution),
+      m_onlyRelay(onlyRelay),
       m_sdpSent(false),
       m_waitingForKeyFrame(true), // 初始时等待关键帧
       m_consecutiveEmptyFrames(0),
@@ -93,6 +95,7 @@ void WebRtcCtl::init()
                                  .add(Constant::KEY_RECEIVER_PWD, m_remotePwdMd5)
                                  .add(Constant::KEY_SENDER, ConfigUtil->local_id)
                                  .add(Constant::KEY_IS_ONLY_FILE, m_isOnlyFile)
+                                              .add(Constant::KEY_ONLY_RELAY, m_onlyRelay)
                                  .add(Constant::KEY_FPS, ConfigUtil->fps);
 
     // 如果启用了自适应分辨率，则包含控制端可显示的最大区域信息
@@ -136,6 +139,16 @@ void WebRtcCtl::initPeerConnection()
         rtc::IceServer turnTcpServer(m_host, m_port, m_username, m_password, rtc::IceServer::RelayType::TurnTcp);
         config.iceServers.push_back(turnTcpServer);
 
+        if (m_onlyRelay)
+        {
+            // 如果仅使用中继服务器，禁用STUN服务器
+            config.iceServers.clear();
+            config.iceServers.push_back(turnUdpServer);
+            config.iceServers.push_back(turnTcpServer);
+            config.iceTransportPolicy = rtc::TransportPolicy::Relay;
+            LOG_INFO("Using only TURN servers for ICE transport");
+        }
+        
         // 创建PeerConnection
         m_peerConnection = std::make_shared<rtc::PeerConnection>(config);
         LOG_INFO("PeerConnection created successfully");

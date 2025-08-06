@@ -41,7 +41,8 @@ class WebRtcCli : public QObject
 {
     Q_OBJECT
 public:
-    WebRtcCli(const QString &remoteId, int fps, bool isOnlyFile, int controlMaxWidth = 1920, int controlMaxHeight = 1080, QObject *parent = nullptr);
+    WebRtcCli(const QString &remoteId, int fps, bool isOnlyFile,
+        int controlMaxWidth = 1920, int controlMaxHeight = 1080, bool isOnlyRelay = false, QObject *parent = nullptr);
     ~WebRtcCli();
 
     // 解析来自WebSocket的消息
@@ -66,6 +67,7 @@ private:
     // 成员变量
     QString m_remoteId;
     bool m_isOnlyFile; // 是否仅文件传输
+    bool m_onlyRelay; // 是否仅使用中继服务器
     QDir m_currentDir;
 
     // WebRTC相关

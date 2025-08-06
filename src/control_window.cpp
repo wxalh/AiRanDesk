@@ -20,10 +20,11 @@
 #include <QVBoxLayout>
 #include <QSettings>
 
-ControlWindow::ControlWindow(QString remoteId, QString remotePwdMd5, WsCli *_ws_cli, bool adaptiveResolution, QWidget *parent)
+ControlWindow::ControlWindow(QString remoteId, QString remotePwdMd5, WsCli *_ws_cli, 
+    bool adaptiveResolution, bool onlyRelay, QWidget *parent)
     : QMainWindow(parent), isReceivedImg(false), windowSizeAdjusted(false),
-      remote_id(remoteId), remote_pwd_md5(remotePwdMd5), m_rtc_ctl(remoteId, remotePwdMd5, false, adaptiveResolution), m_ws(_ws_cli),
-      m_adaptiveResolution(adaptiveResolution), m_floatingToolbar(nullptr), m_draggingToolbar(false)
+      remote_id(remoteId), remote_pwd_md5(remotePwdMd5), m_rtc_ctl(remoteId, remotePwdMd5, false, adaptiveResolution,m_onlyRelay), m_ws(_ws_cli),
+      m_adaptiveResolution(adaptiveResolution), m_onlyRelay(onlyRelay), m_floatingToolbar(nullptr), m_draggingToolbar(false)
 {
     initUI();
     initCLI();

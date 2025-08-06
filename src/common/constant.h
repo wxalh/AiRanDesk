@@ -24,6 +24,7 @@ namespace Constant {
     static const QString KEY_FPS = "fps";
     static const QString KEY_LABEL_NAME = "label_name";
     static const QString KEY_IS_ONLY_FILE = "is_only_file";
+    static const QString KEY_ONLY_RELAY = "only_relay";
 
 
     static const QString KEY_FILE_PATH = "file_path";

@@ -139,9 +139,9 @@ color: rgb(131,193,224);</string>
    <widget class="QCheckBox" name="adaptive_resolution">
     <property name="geometry">
      <rect>
-      <x>670</x>
-      <y>349</y>
-      <width>71</width>
+      <x>140</x>
+      <y>480</y>
+      <width>121</width>
       <height>20</height>
      </rect>
     </property>
@@ -151,10 +151,10 @@ color: rgb(131,193,224);</string>
      </font>
     </property>
     <property name="text">
-     <string>自适应</string>
+     <string>自适应分辨率</string>
     </property>
     <property name="checked">
-     <bool>true</bool>
+     <bool>false</bool>
     </property>
    </widget>
    <widget class="QPushButton" name="btn_conn">
@@ -569,6 +569,27 @@ padding: 0 8px;
      <string>正在连接服务器...</string>
     </property>
    </widget>
+   <widget class="QCheckBox" name="only_relay">
+    <property name="geometry">
+     <rect>
+      <x>280</x>
+      <y>480</y>
+      <width>121</width>
+      <height>20</height>
+     </rect>
+    </property>
+    <property name="font">
+     <font>
+      <pointsize>11</pointsize>
+     </font>
+    </property>
+    <property name="text">
+     <string>仅服务器中继</string>
+    </property>
+    <property name="checked">
+     <bool>false</bool>
+    </property>
+   </widget>
    <zorder>adaptive_resolution</zorder>
    <zorder>local_pwd_border</zorder>
    <zorder>local_id_border</zorder>
@@ -590,6 +611,7 @@ padding: 0 8px;
    <zorder>local_pwd_change</zorder>
    <zorder>local_share</zorder>
    <zorder>ws_connect_status</zorder>
+   <zorder>only_relay</zorder>
   </widget>
  </widget>
  <tabstops>

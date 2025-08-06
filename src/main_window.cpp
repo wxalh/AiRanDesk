@@ -15,7 +15,7 @@
 #include <QCryptographicHash>
 
 MainWindow::MainWindow(QWidget *parent)
-    : QWidget(parent), ui(new Ui::MainWindow), windowTitle("AiRan"), textToCopy("欢迎使用{}远程工具，您的识别码：{} \n验证码: {}"), isCaptureing(false)
+    : QWidget(parent), ui(new Ui::MainWindow), windowTitle("AiRan"), textToCopy("欢迎使用%1远程工具，您的识别码：%2 \n验证码: %3"), isCaptureing(false)
 {
     initUI();
     initCli();
@@ -96,7 +96,8 @@ void MainWindow::connDesktopMgr(const QString &remote_id, const QString &remote_
     {
         // 获取自适应分辨率设置
         bool adaptiveResolution = ui->adaptive_resolution->isChecked();
-        ControlWindow *cw = new ControlWindow(remote_id, remote_pwd_md5, &m_ws, adaptiveResolution);
+        bool onlyRelay = ui->only_relay->isChecked();
+        ControlWindow *cw = new ControlWindow(remote_id, remote_pwd_md5, &m_ws, adaptiveResolution, onlyRelay);
         cw->show();
     }
     else
@@ -275,6 +276,7 @@ void MainWindow::onWsCliRecvBinaryMsg(const QByteArray &message)
         }
         int fps = JsonUtil::getInt(object, Constant::KEY_FPS, 15);
         bool isOnlyFile = JsonUtil::getBool(object, Constant::KEY_IS_ONLY_FILE, false);
+        bool isOnlyRelay = JsonUtil::getBool(object, Constant::KEY_ONLY_RELAY, false);
         
         // 检查是否包含控制端最大显示区域信息（自适应分辨率）
         int controlMaxWidth = -1;  // 默认值-1表示不使用自适应分辨率
@@ -292,7 +294,7 @@ void MainWindow::onWsCliRecvBinaryMsg(const QByteArray &message)
         QThread *m_rtc_cli_thread = new QThread();
         QString senderName = QString("WebRtcCli_%1_%2").arg(sender, isOnlyFile ? "file" : "desktop");
         m_rtc_cli_thread->setObjectName(senderName);
-        WebRtcCli *m_rtc_cli = new WebRtcCli(sender, fps, isOnlyFile, controlMaxWidth, controlMaxHeight);
+        WebRtcCli *m_rtc_cli = new WebRtcCli(sender, fps, isOnlyFile, controlMaxWidth, controlMaxHeight, isOnlyRelay);
 
         connect(&m_ws, &WsCli::onWsCliRecvBinaryMsg, m_rtc_cli, &WebRtcCli::onWsCliRecvBinaryMsg);
         connect(&m_ws, &WsCli::onWsCliRecvTextMsg, m_rtc_cli, &WebRtcCli::onWsCliRecvTextMsg);

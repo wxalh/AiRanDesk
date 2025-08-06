@@ -22,7 +22,8 @@
  * -> on remote sdp -> set remote description -> send ice candidates
  * -> on ice candidate -> add ice candidate
  */
-WebRtcCli::WebRtcCli(const QString &remoteId, int fps, bool isOnlyFile, int controlMaxWidth, int controlMaxHeight, QObject *parent)
+WebRtcCli::WebRtcCli(const QString &remoteId, int fps, bool isOnlyFile,
+    int controlMaxWidth, int controlMaxHeight, bool isOnlyRelay, QObject *parent)
     : QObject(parent),
       m_remoteId(remoteId),
       m_isOnlyFile(isOnlyFile), // 默认不是仅文件传输
@@ -32,7 +33,8 @@ WebRtcCli::WebRtcCli(const QString &remoteId, int fps, bool isOnlyFile, int cont
       m_sdpSent(false), // 初始状态未发送本地描述
       m_destroying(false),
       m_fps(fps),
-      m_mediaCapture(nullptr)
+      m_mediaCapture(nullptr),
+      m_onlyRelay(isOnlyRelay)
 {
 
     QScreen *screen = QGuiApplication::primaryScreen();
@@ -163,6 +165,14 @@ void WebRtcCli::initPeerConnection()
         rtc::IceServer turnTcpServer(m_host, m_port, m_username, m_password, rtc::IceServer::RelayType::TurnTcp);
         config.iceServers.push_back(turnTcpServer);
 
+        if(m_onlyRelay){
+            // 如果仅使用中继服务器，禁用STUN服务器
+            config.iceServers.clear();
+            config.iceServers.push_back(turnUdpServer);
+            config.iceServers.push_back(turnTcpServer);
+            config.iceTransportPolicy = rtc::TransportPolicy::Relay;
+            LOG_INFO("Using only TURN servers for ICE transport");
+        }
         // 创建PeerConnection
         m_peerConnection = std::make_shared<rtc::PeerConnection>(config);
         LOG_INFO("PeerConnection created successfully");
