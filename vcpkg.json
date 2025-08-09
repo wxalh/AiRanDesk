@@ -1,0 +1,21 @@
+{
+  "name": "AiRanDesk",
+  "version-string": "1.0.0",
+  "dependencies": [
+    {
+      "name": "ffmpeg",
+      "features": ["all-nonfree"]
+    },
+    {
+      "name": "libdatachannel",
+      "features": ["srtp", "stdcall", "ws"]
+    },
+    "spdlog",
+    {
+      "name": "qt5-base",
+      "features": ["core", "openssl"]
+    },
+    "qt5-websockets",
+    "qt5-multimedia"
+  ]
+}
