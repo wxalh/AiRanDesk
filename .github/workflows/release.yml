@@ -13,33 +13,14 @@ jobs:
     strategy:
       matrix:
         include:
-          # Windows x86/x64
-          - os: windows-latest
-            arch: x86
-            triplet: x86-windows
-            ext: zip
-          - os: windows-latest
-            arch: x64
-            triplet: x64-windows
-            ext: zip
-          # Linux x86/x64/armhf/aarch64
-          - os: ubuntu-22.04
-            arch: x86
-            triplet: x86-linux
-            ext: tar.gz
           - os: ubuntu-22.04
             arch: x64
             triplet: x64-linux
             ext: tar.gz
-          - os: ubuntu-22.04
-            arch: armhf
-            triplet: arm-linux
-            ext: tar.gz
-          - os: ubuntu-22.04
-            arch: aarch64
-            triplet: arm64-linux
-            ext: tar.gz
-          # macOS
+          - os: windows-latest
+            arch: x64
+            triplet: x64-windows
+            ext: zip
           - os: macos-latest
             arch: x64
             triplet: x64-osx
@@ -49,19 +30,16 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v4
 
-      # 拉取并初始化 vcpkg
       - name: Setup vcpkg
         run: |
           git clone https://github.com/microsoft/vcpkg.git
           cd vcpkg
           ./bootstrap-vcpkg.sh || ./bootstrap-vcpkg.bat
 
-      # 安装 vcpkg 依赖，自动根据 triplet
       - name: Install vcpkg dependencies
         run: |
           ./vcpkg/vcpkg install --triplet=${{ matrix.triplet }}
 
-      # 安装系统依赖
       - name: Install build dependencies (Linux)
         if: matrix.os == 'ubuntu-22.04'
         run: sudo apt-get update && sudo apt-get install -y build-essential ninja-build pkg-config python3 python3-jinja2 nasm meson
@@ -74,7 +52,6 @@ jobs:
         if: matrix.os == 'windows-latest'
         run: choco install cmake ninja -y
 
-      # 构建
       - name: Configure and Build
         run: |
           mkdir build
@@ -82,7 +59,6 @@ jobs:
           cmake .. -DCMAKE_TOOLCHAIN_FILE=../vcpkg/scripts/buildsystems/vcpkg.cmake -DVCPKG_TARGET_TRIPLET=${{ matrix.triplet }} -DCMAKE_BUILD_TYPE=Release
           cmake --build . --config Release
 
-      # 打包
       - name: Package binary
         run: |
           cd build
@@ -92,7 +68,6 @@ jobs:
             tar -czvf ../${{ github.event.repository.name }}-${{ matrix.arch }}-${{ matrix.os == 'macos-latest' && 'macos' || 'linux' }}.tar.gz *
           fi
 
-      # 上传 Release
       - name: Upload Release Asset
         uses: softprops/action-gh-release@v2
         with:
