@@ -2,13 +2,7 @@
 #include "logger_manager.h"
 #include <QDebug>
 
-// 引用硬件设备上下文管理器（在h264_decoder.cpp中定义）
-// 这样编码器和解码器可以共享硬件设备上下文，避免冲突
-extern class HardwareContextManager& getHardwareContextManager();
-
-// 由于C++的单例模式，我们需要在这里声明一个获取函数
-class HardwareContextManager* getSharedHardwareManager();
-
+// 硬件设备上下文管理器 - 单例模式，避免重复创建硬件上下文
 class HardwareContextManager
 {
 public:
@@ -73,7 +67,7 @@ H264Encoder::H264Encoder(QObject *parent)
     , m_height(0)
     , m_fps(30)
     , m_bitrate(2000000)
-    , m_frameCount(0)  // 初始化帧计数
+    , m_frameCount(0)
     , m_hwPixelFormat(AV_PIX_FMT_NONE)
     , m_initialized(false)
 {
@@ -146,7 +140,6 @@ bool H264Encoder::initialize(int width, int height, int fps, int bitrate)
         success = initializeCodec();
     }
     
-
     if (success) {
         m_initialized = true;
         QString accelType = m_hwAccelName.isEmpty() ? "software" : m_hwAccelName;
@@ -192,34 +185,34 @@ bool H264Encoder::initializeCodec(const QString& hwAccel)
     m_codecContext->height = m_height;
     m_codecContext->time_base = AVRational{1, m_fps};
     m_codecContext->framerate = AVRational{m_fps, 1};
-    m_codecContext->gop_size = 30; // 强制更频繁的I帧（每30帧一个关键帧）
-    m_codecContext->max_b_frames = 0; // 禁用B帧，简化编码
-    m_codecContext->keyint_min = 10; // 最小关键帧间隔
+    m_codecContext->gop_size = 30;
+    m_codecContext->max_b_frames = 0;
+    m_codecContext->keyint_min = 10;
     
     // 网络自适应优化：针对高延迟网络的编码参数
-    m_codecContext->flags |= AV_CODEC_FLAG_LOW_DELAY; // 低延迟模式
-    m_codecContext->flags2 |= AV_CODEC_FLAG2_FAST; // 快速编码
-    m_codecContext->slices = 4; // 使用多片编码，增强错误恢复能力
+    m_codecContext->flags |= AV_CODEC_FLAG_LOW_DELAY;
+    m_codecContext->flags2 |= AV_CODEC_FLAG2_FAST;
+    m_codecContext->slices = 4;
     
     // 设置编码预设和调优
     if (hwAccel.isEmpty()) {
-        // 软件编码优化 - 重置硬件相关设置
-        m_codecContext->pix_fmt = AV_PIX_FMT_YUV420P;
-        m_hwPixelFormat = AV_PIX_FMT_NONE;  // 确保不使用硬件传输
-        m_hwDeviceCtx = nullptr;             // 确保不使用硬件设备
+        // 软件编码优化 - 统一使用NV12格式
+        m_codecContext->pix_fmt = AV_PIX_FMT_NV12;
+        m_hwPixelFormat = AV_PIX_FMT_NONE;
+        m_hwDeviceCtx = nullptr;
         
         // 验证分辨率参数 - 确保分辨率是偶数（H264要求）
         if (m_width % 2 != 0 || m_height % 2 != 0) {
             LOG_WARN("Adjusting resolution from {}x{} to make it even for H264 compatibility", m_width, m_height);
-            m_width = (m_width + 1) & ~1;  // 向上取偶数
-            m_height = (m_height + 1) & ~1; // 向上取偶数
+            m_width = (m_width + 1) & ~1;
+            m_height = (m_height + 1) & ~1;
             m_codecContext->width = m_width;
             m_codecContext->height = m_height;
         }
         
         // 验证比特率是否合理
-        int minBitrate = m_width * m_height * m_fps * 0.05; // 最小比特率
-        int maxBitrate = m_width * m_height * m_fps * 0.5;  // 最大比特率
+        int minBitrate = m_width * m_height * m_fps * 0.05;
+        int maxBitrate = m_width * m_height * m_fps * 0.5;
         if (m_bitrate < minBitrate) {
             m_bitrate = minBitrate;
             m_codecContext->bit_rate = m_bitrate;
@@ -233,10 +226,9 @@ bool H264Encoder::initializeCodec(const QString& hwAccel)
         LOG_INFO("Setting software encoding parameters: {}x{}, {}fps, {}bps", m_width, m_height, m_fps, m_bitrate);
         av_opt_set(m_codecContext->priv_data, "preset", "fast", 0);
         av_opt_set(m_codecContext->priv_data, "tune", "zerolatency", 0);
-        // 网络自适应：增强错误恢复能力
         av_opt_set(m_codecContext->priv_data, "x264opts", "no-mbtree:sliced-threads:rc-lookahead=10", 0);
-        // 注意：使用码率控制时不要设置crf
-        // av_opt_set(m_codecContext->priv_data, "crf", "23", 0);
+        
+        LOG_INFO("Software encoder configured with NV12 format for universal compatibility");
     } else {
         // 硬件加速初始化
         LOG_INFO("Setting hardware encoding parameters: {}x{}, {}fps, {}bps", m_width, m_height, m_fps, m_bitrate);
@@ -266,16 +258,15 @@ bool H264Encoder::initializeCodec(const QString& hwAccel)
             }
             
             // 使用更保守的参数
-            m_codecContext->bit_rate = m_width * m_height * m_fps * 0.1; // 更低的比特率
+            m_codecContext->bit_rate = m_width * m_height * m_fps * 0.1;
             m_codecContext->width = m_width;
             m_codecContext->height = m_height;
             m_codecContext->time_base = AVRational{1, m_fps};
             m_codecContext->framerate = AVRational{m_fps, 1};
-            m_codecContext->gop_size = 60; // 更大的GOP
+            m_codecContext->gop_size = 60;
             m_codecContext->max_b_frames = 0;
-            m_codecContext->pix_fmt = AV_PIX_FMT_YUV420P;
+            m_codecContext->pix_fmt = AV_PIX_FMT_NV12;
             
-            // 更简单的设置
             av_opt_set(m_codecContext->priv_data, "preset", "ultrafast", 0);
             av_opt_set(m_codecContext->priv_data, "profile", "baseline", 0);
             
@@ -292,7 +283,7 @@ bool H264Encoder::initializeCodec(const QString& hwAccel)
         }
     }
     
-    // 分配帧 - QSV编码器的帧将在编码时动态分配
+    // 分配帧
     m_frame = av_frame_alloc();
     if (!m_frame) {
         LOG_ERROR("Could not allocate video frame");
@@ -319,11 +310,9 @@ bool H264Encoder::initializeCodec(const QString& hwAccel)
         return false;
     }
     
-    // 初始化图像格式转换器
-    AVPixelFormat targetFormat = (hwAccel == "qsv") ? AV_PIX_FMT_NV12 : AV_PIX_FMT_YUV420P;
-    
+    // 初始化图像格式转换器 - 统一使用NV12格式，所有编码器都支持
     // 注意：这里暂不创建SwsContext，在qimageToAVFrame中动态创建
-    // 因为QSV的分辨率可能被对齐，需要在转换时确定正确的参数
+    // 因为分辨率可能被对齐，需要在转换时确定正确的参数
     
     m_hwAccelName = hwAccel;
     return true;
@@ -338,37 +327,37 @@ bool H264Encoder::initializeHardwareAccel(const QString& hwAccel)
     
     // 其他硬件加速器的通用处理
     if (hwAccel == "nvenc") {
-        // NVENC不需要硬件帧上下文，直接设置像素格式
-        m_codecContext->pix_fmt = AV_PIX_FMT_YUV420P;  // NVENC可以接受软件格式
-        m_hwPixelFormat = AV_PIX_FMT_NONE;  // 不使用硬件传输
+        // NVENC统一使用NV12格式
+        m_codecContext->pix_fmt = AV_PIX_FMT_NV12;
+        m_hwPixelFormat = AV_PIX_FMT_NONE;
         
         // NVENC特定选项
         av_opt_set(m_codecContext->priv_data, "preset", "fast", 0);
         av_opt_set(m_codecContext->priv_data, "profile", "high", 0);
-        av_opt_set(m_codecContext->priv_data, "rc", "cbr", 0);  // 固定码率
+        av_opt_set(m_codecContext->priv_data, "rc", "cbr", 0);
         
-        LOG_INFO("NVENC encoder configured with software input");
+        LOG_INFO("NVENC encoder configured with NV12 format");
         return true;
         
     } else if (hwAccel == "amf") {
-        // AMF也可以使用软件输入
-        m_codecContext->pix_fmt = AV_PIX_FMT_YUV420P;  // AMF可以接受软件格式
-        m_hwPixelFormat = AV_PIX_FMT_NONE;  // 不使用硬件传输
+        // AMF统一使用NV12格式
+        m_codecContext->pix_fmt = AV_PIX_FMT_NV12;
+        m_hwPixelFormat = AV_PIX_FMT_NONE;
         
         // AMF特定选项
         av_opt_set(m_codecContext->priv_data, "usage", "lowlatency", 0);
         av_opt_set(m_codecContext->priv_data, "profile", "high", 0);
         av_opt_set(m_codecContext->priv_data, "rc", "cbr", 0);
         
-        LOG_INFO("AMF encoder configured with software input");
+        LOG_INFO("AMF encoder configured with NV12 format");
         return true;
         
     } else if (hwAccel == "videotoolbox") {
         m_hwPixelFormat = AV_PIX_FMT_VIDEOTOOLBOX;
         m_codecContext->pix_fmt = AV_PIX_FMT_VIDEOTOOLBOX;
     } else {
-        m_codecContext->pix_fmt = AV_PIX_FMT_YUV420P;
-        return true; // 其他硬件加速器可能不需要特殊设置
+        m_codecContext->pix_fmt = AV_PIX_FMT_NV12;
+        return true;
     }
     
     // 只有VideoToolbox需要硬件设备上下文
@@ -391,7 +380,7 @@ bool H264Encoder::initializeHardwareAccel(const QString& hwAccel)
         
         AVHWFramesContext* hwFramesCtx = (AVHWFramesContext*)hwFramesRef->data;
         hwFramesCtx->format = m_hwPixelFormat;
-        hwFramesCtx->sw_format = AV_PIX_FMT_YUV420P;
+        hwFramesCtx->sw_format = AV_PIX_FMT_NV12;
         hwFramesCtx->width = m_width;
         hwFramesCtx->height = m_height;
         hwFramesCtx->initial_pool_size = 20;
@@ -416,8 +405,8 @@ bool H264Encoder::initializeQSV()
     LOG_INFO("Initializing Intel QSV encoder with shared hardware context");
     
     // QSV要求分辨率必须是16的倍数，调整分辨率
-    int alignedWidth = (m_width + 15) & ~15;   // 向上对齐到16的倍数
-    int alignedHeight = (m_height + 15) & ~15; // 向上对齐到16的倍数
+    int alignedWidth = (m_width + 15) & ~15;
+    int alignedHeight = (m_height + 15) & ~15;
     
     if (alignedWidth != m_width || alignedHeight != m_height) {
         LOG_INFO("Aligning QSV resolution from {}x{} to {}x{}", m_width, m_height, alignedWidth, alignedHeight);
@@ -435,7 +424,7 @@ bool H264Encoder::initializeQSV()
     LOG_INFO("Successfully obtained shared QSV device context");
     
     // QSV特定设置必须在创建硬件帧上下文之前设置
-    m_codecContext->pix_fmt = AV_PIX_FMT_QSV;  // 编码器使用QSV格式
+    m_codecContext->pix_fmt = AV_PIX_FMT_QSV;
     m_hwPixelFormat = AV_PIX_FMT_QSV;
     
     // 设置硬件设备上下文
@@ -451,8 +440,8 @@ bool H264Encoder::initializeQSV()
     AVHWFramesContext* hwFramesCtx = (AVHWFramesContext*)hwFramesRef->data;
     hwFramesCtx->format = AV_PIX_FMT_QSV;
     hwFramesCtx->sw_format = AV_PIX_FMT_NV12;
-    hwFramesCtx->width = alignedWidth;   // 使用对齐后的尺寸
-    hwFramesCtx->height = alignedHeight; // 使用对齐后的尺寸
+    hwFramesCtx->width = alignedWidth;
+    hwFramesCtx->height = alignedHeight;
     hwFramesCtx->initial_pool_size = 20;
     
     int ret = av_hwframe_ctx_init(hwFramesRef);
@@ -471,7 +460,7 @@ bool H264Encoder::initializeQSV()
     av_opt_set(m_codecContext->priv_data, "profile", "high", 0);
     
     // QSV特定参数调整
-    m_codecContext->max_b_frames = 0;  // QSV可能不支持B帧，设置为0
+    m_codecContext->max_b_frames = 0;
     
     LOG_INFO("QSV encoder initialized successfully with shared context");
     return true;
@@ -518,7 +507,7 @@ rtc::binary H264Encoder::encodeFrame(const QImage& image)
     
     // 强制第一帧为关键帧，提高兼容性
     if (m_frameCount == 0) {
-        encodingFrame->pict_type = AV_PICTURE_TYPE_I;  // 强制I帧
+        encodingFrame->pict_type = AV_PICTURE_TYPE_I;
         encodingFrame->key_frame = 1;
         LOG_INFO("Forcing first frame as key frame");
     }
@@ -579,15 +568,12 @@ AVFrame* H264Encoder::qimageToAVFrame(const QImage& image)
         return nullptr;
     }
     
-    // 对于QSV编码，创建软件帧，稍后传输到硬件
-    AVPixelFormat targetFormat = AV_PIX_FMT_NV12;  // QSV推荐使用NV12
-    if (m_hwAccelName != "qsv") {
-        targetFormat = AV_PIX_FMT_YUV420P;  // 其他编码器使用YUV420P
-    }
+    // 统一使用NV12格式，所有编码器都支持
+    AVPixelFormat targetFormat = AV_PIX_FMT_NV12;
     
     frame->format = targetFormat;
-    frame->width = m_width;    // 使用原始尺寸，不使用对齐后的尺寸
-    frame->height = m_height;  // 使用原始尺寸，不使用对齐后的尺寸
+    frame->width = m_width;
+    frame->height = m_height;
     
     // 确保帧时间基准设置正确
     frame->pts = AV_NOPTS_VALUE;
@@ -607,7 +593,7 @@ AVFrame* H264Encoder::qimageToAVFrame(const QImage& image)
     int srcLinesize[1] = { static_cast<int>(image.bytesPerLine()) };
     
     // 检查SwsContext是否有效，或者需要重新创建
-    AVPixelFormat currentTargetFormat = (m_hwAccelName == "qsv") ? AV_PIX_FMT_NV12 : AV_PIX_FMT_YUV420P;
+    AVPixelFormat currentTargetFormat = AV_PIX_FMT_NV12;
     if (!m_swsContext) {
         // 重新创建SwsContext以确保格式正确
         if (m_swsContext) {
@@ -621,13 +607,15 @@ AVFrame* H264Encoder::qimageToAVFrame(const QImage& image)
         );
         
         if (!m_swsContext) {
-            LOG_ERROR("SwsContext creation failed for format conversion");
+            LOG_ERROR("SwsContext creation failed for RGB24 to NV12 conversion");
             av_frame_free(&frame);
             return nullptr;
         }
+        
+        LOG_DEBUG("Created SwsContext for RGB24 to NV12 conversion");
     }
     
-    // 转换RGB到目标格式
+    // 转换RGB到NV12格式
     int swsRet = sws_scale(m_swsContext,
               srcData, srcLinesize, 0, m_height,
               frame->data, frame->linesize);
@@ -692,8 +680,8 @@ AVFrame* H264Encoder::transferToHardware(AVFrame* swFrame)
     }
     
     // 设置硬件帧属性（在分配缓冲区后）
-    hwFrame->width = m_codecContext->width;   // 使用编码器的对齐尺寸
-    hwFrame->height = m_codecContext->height; // 使用编码器的对齐尺寸
+    hwFrame->width = m_codecContext->width;
+    hwFrame->height = m_codecContext->height;
     
     // 如果软件帧尺寸与硬件帧尺寸不同，需要先缩放
     AVFrame* scaledFrame = swFrame;
@@ -793,7 +781,7 @@ void H264Encoder::cleanup()
     }
     
     m_codec = nullptr;
-    m_hwPixelFormat = AV_PIX_FMT_NONE;  // 重置硬件像素格式
+    m_hwPixelFormat = AV_PIX_FMT_NONE;
     m_hwAccelName.clear();
     m_initialized = false;
     

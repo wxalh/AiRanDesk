@@ -6,8 +6,8 @@
   },
   "configurePresets": [
     {
-      "name": "x64",
-      "displayName": "x64 (vcpkg)",
+      "name": "x64-windows-msvc",
+      "displayName": "x64-windows-msvc (vcpkg)",
       "generator": "Visual Studio 17 2022",
       "architecture": "x64",
       "toolset": "host=x64",
@@ -18,7 +18,7 @@
     },
     {
       "name": "x64-linux",
-      "displayName": "x64 (vcpkg, Linux)",
+      "displayName": "x64-linux (vcpkg, Linux)",
       "generator": "Ninja",
       "cacheVariables": {
         "CMAKE_TOOLCHAIN_FILE": "/home/xyy/vcpkg/scripts/buildsystems/vcpkg.cmake",
@@ -29,9 +29,9 @@
   ],
   "buildPresets": [
     {
-      "name": "x64",
-      "configurePreset": "x64",
-      "configuration": "RelWithDebInfo"
+      "name": "x64-windows-msvc",
+      "configurePreset": "x64-windows-msvc",
+      "configuration": "Debug"
     },
     {
       "name": "x64-linux",

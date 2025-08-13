@@ -46,6 +46,7 @@ private:
     bool initializeHardwareAccel(const QString& hwAccel);
     bool validateHardwareDecoding();  // 验证硬件解码是否真正工作
     QImage avframeToQImage(AVFrame* frame);
+    AVFrame* convertToNV12(AVFrame* inputFrame);  // 转换任意格式到NV12
     
     // 硬件解码回调函数
     static enum AVPixelFormat get_hw_format(AVCodecContext *ctx, const enum AVPixelFormat *pix_fmts);

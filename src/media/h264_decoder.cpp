@@ -423,30 +423,22 @@ QImage H264Decoder::decodeFrame(const rtc::binary& h264Data)
                           (!m_hwAccelName.isEmpty() && frameFormat != AV_PIX_FMT_YUV420P);
     
     if (isHardwareFrame && m_swFrame && !m_hwAccelName.isEmpty()) {
-        LOG_DEBUG("Detected hardware frame format: {}, transferring to software", av_get_pix_fmt_name(frameFormat));
+        LOG_DEBUG("Detected hardware frame format: {}, transferring to software NV12", av_get_pix_fmt_name(frameFormat));
         
-        // 设置软件帧的格式和尺寸 - 根据硬件加速器类型选择最佳输出格式
-        if (m_hwAccelName == "qsv" || frameFormat == AV_PIX_FMT_D3D11 || frameFormat == AV_PIX_FMT_DXVA2_VLD) {
-            // QSV和DirectX通常转换为NV12
-            m_swFrame->format = AV_PIX_FMT_NV12;
-        } else if (m_hwAccelName == "cuda" || frameFormat == AV_PIX_FMT_CUDA) {
-            m_swFrame->format = AV_PIX_FMT_YUV420P;  // CUDA通常输出YUV420P
-        } else {
-            // 其他硬件加速器的默认输出格式
-            m_swFrame->format = AV_PIX_FMT_YUV420P;
-        }
+        // 统一使用NV12格式作为软件输出，所有硬件解码器都支持
+        m_swFrame->format = AV_PIX_FMT_NV12;
         m_swFrame->width = m_frame->width;
         m_swFrame->height = m_frame->height;
         
         // 为软件帧分配缓冲区 - 重用现有缓冲区或分配新的
         if (m_swFrame->buf[0]) {
             // 检查现有缓冲区是否足够大
-            int required_size = av_image_get_buffer_size(static_cast<AVPixelFormat>(m_swFrame->format), 
+            int required_size = av_image_get_buffer_size(AV_PIX_FMT_NV12, 
                                                        m_swFrame->width, m_swFrame->height, 32);
             if (m_swFrame->buf[0]->size >= required_size) {
                 // 重用现有缓冲区，只需要清除引用
                 av_frame_unref(m_swFrame);
-                m_swFrame->format = (m_hwAccelName == "qsv" || frameFormat == AV_PIX_FMT_D3D11 || frameFormat == AV_PIX_FMT_DXVA2_VLD) ? AV_PIX_FMT_NV12 : AV_PIX_FMT_YUV420P;
+                m_swFrame->format = AV_PIX_FMT_NV12;
                 m_swFrame->width = m_frame->width;
                 m_swFrame->height = m_frame->height;
                 LOG_DEBUG("Reusing existing software frame buffer");
@@ -485,10 +477,20 @@ QImage H264Decoder::decodeFrame(const rtc::binary& h264Data)
             return QImage();
         }
         
-        LOG_DEBUG("Successfully transferred hardware frame to software format: {}", av_get_pix_fmt_name(static_cast<AVPixelFormat>(m_swFrame->format)));
+        LOG_DEBUG("Successfully transferred hardware frame to software NV12 format");
         frameToConvert = m_swFrame;
     } else {
         LOG_DEBUG("Using software frame format: {}", av_get_pix_fmt_name(frameFormat));
+        // 如果是软件解码但不是NV12格式，需要转换为NV12统一处理
+        if (frameFormat != AV_PIX_FMT_NV12) {
+            frameToConvert = convertToNV12(m_frame);
+            if (!frameToConvert) {
+                LOG_WARN("Failed to convert software frame to NV12, using original format");
+                frameToConvert = m_frame;
+            }
+        } else {
+            frameToConvert = m_frame;
+        }
     }
     
     // 转换为QImage
@@ -504,7 +506,74 @@ QImage H264Decoder::decodeFrame(const rtc::binary& h264Data)
         av_frame_unref(m_swFrame);
     }
     
+    // 清理转换产生的临时帧
+    if (frameToConvert != m_frame && frameToConvert != m_swFrame) {
+        av_frame_free(&frameToConvert);
+    }
+    
     return result;
+}
+
+AVFrame* H264Decoder::convertToNV12(AVFrame* inputFrame)
+{
+    if (!inputFrame) {
+        return nullptr;
+    }
+    
+    AVPixelFormat inputFormat = static_cast<AVPixelFormat>(inputFrame->format);
+    if (inputFormat == AV_PIX_FMT_NV12) {
+        // 已经是NV12格式，直接返回
+        return inputFrame;
+    }
+    
+    // 创建转换帧
+    AVFrame* nv12Frame = av_frame_alloc();
+    if (!nv12Frame) {
+        LOG_ERROR("Failed to allocate NV12 conversion frame");
+        return nullptr;
+    }
+    
+    nv12Frame->format = AV_PIX_FMT_NV12;
+    nv12Frame->width = inputFrame->width;
+    nv12Frame->height = inputFrame->height;
+    
+    int ret = av_frame_get_buffer(nv12Frame, 32);
+    if (ret < 0) {
+        char errbuf[AV_ERROR_MAX_STRING_SIZE];
+        av_strerror(ret, errbuf, sizeof(errbuf));
+        LOG_ERROR("Failed to allocate NV12 frame buffer: {}", errbuf);
+        av_frame_free(&nv12Frame);
+        return nullptr;
+    }
+    
+    // 创建转换上下文
+    struct SwsContext* swsCtx = sws_getContext(
+        inputFrame->width, inputFrame->height, inputFormat,
+        nv12Frame->width, nv12Frame->height, AV_PIX_FMT_NV12,
+        SWS_BILINEAR, nullptr, nullptr, nullptr
+    );
+    
+    if (!swsCtx) {
+        LOG_ERROR("Failed to create sws context for NV12 conversion");
+        av_frame_free(&nv12Frame);
+        return nullptr;
+    }
+    
+    // 执行转换
+    int scaledHeight = sws_scale(swsCtx,
+                                inputFrame->data, inputFrame->linesize, 0, inputFrame->height,
+                                nv12Frame->data, nv12Frame->linesize);
+    
+    sws_freeContext(swsCtx);
+    
+    if (scaledHeight != inputFrame->height) {
+        LOG_ERROR("Failed to convert frame to NV12: expected {} lines, got {}", inputFrame->height, scaledHeight);
+        av_frame_free(&nv12Frame);
+        return nullptr;
+    }
+    
+    LOG_DEBUG("Successfully converted {} frame to NV12", av_get_pix_fmt_name(inputFormat));
+    return nv12Frame;
 }
 
 QImage H264Decoder::avframeToQImage(AVFrame* frame)
