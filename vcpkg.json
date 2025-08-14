@@ -1,21 +1,25 @@
 {
   "name": "airandesk",
-  "version-string": "1.0.0",
+  "version": "3.0.0",
+  "description": "AiRanDesk remote desktop application with advanced screen capture and H264 encoding",
   "dependencies": [
+    "qt5-base",
+    "qt5-websockets",
+    "qt5-multimedia",
+    "spdlog",
+    "libdatachannel",
     {
       "name": "ffmpeg",
-      "features": ["all-nonfree"]
-    },
-    {
-      "name": "libdatachannel",
-      "features": ["srtp", "stdcall", "ws"]
-    },
-    "spdlog",
-    {
-      "name": "qt5-base",
-      "features": ["openssl"]
-    },
-    "qt5-websockets",
-    "qt5-multimedia"
-  ]
+      "features": [
+        "avcodec",
+        "avformat",
+        "avfilter",
+        "swscale",
+        "nvenc",
+        "qsv",
+        "amf"
+      ]
+    }
+  ],
+  "builtin-baseline": "2024.01.12"
 }
