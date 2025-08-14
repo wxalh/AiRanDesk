@@ -1,6 +1,7 @@
 #include "h264_encoder.h"
 #include "logger_manager.h"
 #include <QDebug>
+#include <cstdio>
 
 // 硬件设备上下文管理器 - 单例模式，避免重复创建硬件上下文
 class HardwareContextManager
@@ -185,9 +186,9 @@ bool H264Encoder::initializeCodec(const QString& hwAccel)
     m_codecContext->height = m_height;
     m_codecContext->time_base = AVRational{1, m_fps};
     m_codecContext->framerate = AVRational{m_fps, 1};
-    m_codecContext->gop_size = 30;
-    m_codecContext->max_b_frames = 0;
-    m_codecContext->keyint_min = 10;
+    m_codecContext->gop_size = m_fps * 3;  // 每3秒一个关键帧
+    m_codecContext->max_b_frames = 0;      // 不使用B帧，只使用I帧和P帧
+    m_codecContext->keyint_min = m_fps;    // 最小关键帧间隔1秒
     
     // 网络自适应优化：针对高延迟网络的编码参数
     m_codecContext->flags |= AV_CODEC_FLAG_LOW_DELAY;
@@ -263,13 +264,14 @@ bool H264Encoder::initializeCodec(const QString& hwAccel)
             m_codecContext->height = m_height;
             m_codecContext->time_base = AVRational{1, m_fps};
             m_codecContext->framerate = AVRational{m_fps, 1};
-            m_codecContext->gop_size = 60;
+            m_codecContext->gop_size = m_fps * 3;  // 每3秒一个关键帧
             m_codecContext->max_b_frames = 0;
+            m_codecContext->keyint_min = m_fps;
             m_codecContext->pix_fmt = AV_PIX_FMT_NV12;
             
             av_opt_set(m_codecContext->priv_data, "preset", "ultrafast", 0);
             av_opt_set(m_codecContext->priv_data, "profile", "baseline", 0);
-            
+
             ret = avcodec_open2(m_codecContext, m_codec, nullptr);
             if (ret < 0) {
                 av_strerror(ret, errbuf, sizeof(errbuf));
@@ -290,17 +292,15 @@ bool H264Encoder::initializeCodec(const QString& hwAccel)
         return false;
     }
     
-    // 对于QSV硬件编码，不在这里分配buffer，而是在编码时使用硬件帧
-    if (hwAccel != "qsv") {
-        m_frame->format = m_codecContext->pix_fmt;
-        m_frame->width = m_codecContext->width;
-        m_frame->height = m_codecContext->height;
-        
-        ret = av_frame_get_buffer(m_frame, 32);
-        if (ret < 0) {
-            LOG_ERROR("Could not allocate video frame data");
-            return false;
-        }
+    // 所有编码器都统一分配buffer，包括QSV
+    m_frame->format = m_codecContext->pix_fmt;
+    m_frame->width = m_codecContext->width;
+    m_frame->height = m_codecContext->height;
+    
+    ret = av_frame_get_buffer(m_frame, 32);
+    if (ret < 0) {
+        LOG_ERROR("Could not allocate video frame data");
+        return false;
     }
     
     // 分配数据包
@@ -402,7 +402,7 @@ bool H264Encoder::initializeHardwareAccel(const QString& hwAccel)
 
 bool H264Encoder::initializeQSV()
 {
-    LOG_INFO("Initializing Intel QSV encoder with shared hardware context");
+    LOG_INFO("Initializing Intel QSV encoder with NV12 software format for compatibility");
     
     // QSV要求分辨率必须是16的倍数，调整分辨率
     int alignedWidth = (m_width + 15) & ~15;
@@ -414,46 +414,10 @@ bool H264Encoder::initializeQSV()
         m_codecContext->height = alignedHeight;
     }
     
-    // 使用共享的硬件设备上下文管理器
-    m_hwDeviceCtx = HardwareContextManager::instance().getDeviceContext("qsv");
-    if (!m_hwDeviceCtx) {
-        LOG_ERROR("Failed to get shared QSV device context");
-        return false;
-    }
-    
-    LOG_INFO("Successfully obtained shared QSV device context");
-    
-    // QSV特定设置必须在创建硬件帧上下文之前设置
-    m_codecContext->pix_fmt = AV_PIX_FMT_QSV;
-    m_hwPixelFormat = AV_PIX_FMT_QSV;
-    
-    // 设置硬件设备上下文
-    m_codecContext->hw_device_ctx = av_buffer_ref(m_hwDeviceCtx);
-    
-    // 创建硬件帧上下文
-    AVBufferRef* hwFramesRef = av_hwframe_ctx_alloc(m_hwDeviceCtx);
-    if (!hwFramesRef) {
-        LOG_ERROR("Failed to allocate QSV frames context");
-        return false;
-    }
-    
-    AVHWFramesContext* hwFramesCtx = (AVHWFramesContext*)hwFramesRef->data;
-    hwFramesCtx->format = AV_PIX_FMT_QSV;
-    hwFramesCtx->sw_format = AV_PIX_FMT_NV12;
-    hwFramesCtx->width = alignedWidth;
-    hwFramesCtx->height = alignedHeight;
-    hwFramesCtx->initial_pool_size = 20;
-    
-    int ret = av_hwframe_ctx_init(hwFramesRef);
-    if (ret < 0) {
-        char errbuf[AV_ERROR_MAX_STRING_SIZE];
-        av_strerror(ret, errbuf, sizeof(errbuf));
-        LOG_ERROR("Failed to initialize QSV frames context: {}", errbuf);
-        av_buffer_unref(&hwFramesRef);
-        return false;
-    }
-    
-    m_codecContext->hw_frames_ctx = hwFramesRef;
+    // QSV统一使用NV12软件格式，避免硬件帧上下文问题
+    m_codecContext->pix_fmt = AV_PIX_FMT_NV12;
+    m_hwPixelFormat = AV_PIX_FMT_NONE;
+    m_hwDeviceCtx = nullptr;
     
     // QSV特定的编码器选项
     av_opt_set(m_codecContext->priv_data, "preset", "medium", 0);
@@ -462,7 +426,7 @@ bool H264Encoder::initializeQSV()
     // QSV特定参数调整
     m_codecContext->max_b_frames = 0;
     
-    LOG_INFO("QSV encoder initialized successfully with shared context");
+    LOG_INFO("QSV encoder configured with NV12 software format for universal compatibility");
     return true;
 }
 
@@ -481,15 +445,11 @@ rtc::binary H264Encoder::encodeFrame(const QImage& image)
         rgbImage = rgbImage.convertToFormat(QImage::Format_RGB888);
     }
     
-    // 缩放图像到编码器尺寸
-    if (rgbImage.width() != m_width || rgbImage.height() != m_height) {
-        rgbImage = rgbImage.scaled(m_width, m_height, Qt::IgnoreAspectRatio, Qt::SmoothTransformation);
-    }
-    
-    // 转换为AVFrame
+    // 不在这里进行QImage缩放，让FFmpeg的SwsContext处理缩放以获得更好的质量
+    // 转换为AVFrame（FFmpeg会自动处理分辨率转换）
     AVFrame* inputFrame = qimageToAVFrame(rgbImage);
     if (!inputFrame) {
-        LOG_ERROR("Failed to convert QImage to AVFrame");
+        LOG_ERROR("Failed to convert QImage to AVFrame with scaling");
         return rtc::binary();
     }
     
@@ -594,33 +554,47 @@ AVFrame* H264Encoder::qimageToAVFrame(const QImage& image)
     
     // 检查SwsContext是否有效，或者需要重新创建
     AVPixelFormat currentTargetFormat = AV_PIX_FMT_NV12;
-    if (!m_swsContext) {
-        // 重新创建SwsContext以确保格式正确
+    
+    // 获取输入图像的实际尺寸
+    int inputWidth = image.width();
+    int inputHeight = image.height();
+    
+    // 检查是否需要重新创建SwsContext（输入尺寸改变或首次创建）
+    static int lastInputWidth = -1;
+    static int lastInputHeight = -1;
+    
+    if (!m_swsContext || inputWidth != lastInputWidth || inputHeight != lastInputHeight) {
+        // 重新创建SwsContext以适应新的输入尺寸
         if (m_swsContext) {
             sws_freeContext(m_swsContext);
         }
         
         m_swsContext = sws_getContext(
-            m_width, m_height, AV_PIX_FMT_RGB24,
-            m_width, m_height, currentTargetFormat,
-            SWS_BILINEAR, nullptr, nullptr, nullptr
+            inputWidth, inputHeight, AV_PIX_FMT_RGB24,      // 输入：实际图像尺寸
+            m_width, m_height, currentTargetFormat,          // 输出：编码器尺寸
+            SWS_BILINEAR, nullptr, nullptr, nullptr         // 使用双线性插值获得更好质量
         );
         
         if (!m_swsContext) {
-            LOG_ERROR("SwsContext creation failed for RGB24 to NV12 conversion");
+            LOG_ERROR("SwsContext creation failed for RGB24 to NV12 conversion ({}x{} -> {}x{})", 
+                     inputWidth, inputHeight, m_width, m_height);
             av_frame_free(&frame);
             return nullptr;
         }
         
-        LOG_DEBUG("Created SwsContext for RGB24 to NV12 conversion");
+        lastInputWidth = inputWidth;
+        lastInputHeight = inputHeight;
+        
+        LOG_DEBUG("Created SwsContext for RGB24 to NV12 conversion with scaling: {}x{} -> {}x{}", 
+                 inputWidth, inputHeight, m_width, m_height);
     }
     
-    // 转换RGB到NV12格式
+    // 转换RGB到NV12格式（同时进行缩放）
     int swsRet = sws_scale(m_swsContext,
-              srcData, srcLinesize, 0, m_height,
+              srcData, srcLinesize, 0, inputHeight,      // 使用输入图像的高度
               frame->data, frame->linesize);
     
-    if (swsRet != m_height) {
+    if (swsRet != m_height) {  // 输出应该是编码器的高度
         LOG_ERROR("sws_scale failed: expected {} lines, got {}", m_height, swsRet);
         av_frame_free(&frame);
         return nullptr;

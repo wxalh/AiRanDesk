@@ -167,15 +167,6 @@ rtc::binary CaptureWorker::captureScreenH264()
 
     // 转换为QImage
     QImage image = pixmap.toImage();
-
-    // 缩放到编码器的分辨率（编码器已经用正确的分辨率初始化）
-    if (image.width() != m_width || image.height() != m_height)
-    {
-        image = image.scaled(m_width, m_height, Qt::IgnoreAspectRatio, Qt::SmoothTransformation);
-        LOG_DEBUG("📺 Scaled screen capture from {}x{} to {}x{} for encoding",
-                  pixmap.width(), pixmap.height(), m_width, m_height);
-    }
-
     // 使用H264编码器编码（编码器已经用m_width和m_height初始化）
     return m_encoder->encodeFrame(image);
 }
