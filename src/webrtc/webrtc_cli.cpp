@@ -197,19 +197,19 @@ void WebRtcCli::createTracksAndChannels()
         {
             // 创建视频轨道 - 严格按照官方示例配置
             LOG_INFO("Creating video track");
-            rtc::Description::Video videoDesc("video-stream"); // 使用固定流名称匹配接收端
+            std::string video_name = Constant::TYPE_VIDEO.toStdString();
+            rtc::Description::Video videoDesc(video_name); // 使用固定流名称匹配接收端
             videoDesc.addH264Codec(96);                        // H264 payload type
 
             // 设置SSRC和媒体流标识 - 关键配置
             uint32_t videoSSRC = 1;
-            std::string cname = "video-stream";
-            std::string msid = "stream1";
-            videoDesc.addSSRC(videoSSRC, cname, msid, cname);
+            std::string msid = Constant::TYPE_VIDEO_MSID.toStdString();
+            videoDesc.addSSRC(videoSSRC, video_name, msid, video_name);
             videoDesc.setDirection(rtc::Description::Direction::SendOnly);
             m_videoTrack = m_peerConnection->addTrack(videoDesc);
 
             // 为视频轨道设置RTP打包器链
-            auto rtpConfig = std::make_shared<rtc::RtpPacketizationConfig>(videoSSRC, cname, 96, rtc::H264RtpPacketizer::ClockRate);
+            auto rtpConfig = std::make_shared<rtc::RtpPacketizationConfig>(videoSSRC, video_name, 96, rtc::H264RtpPacketizer::ClockRate);
             // 使用StartSequence分隔符，因为FFMPEG输出的是Annex-B格式（带有0x00000001起始码）
             auto h264Packetizer = std::make_shared<rtc::H264RtpPacketizer>(rtc::NalUnit::Separator::StartSequence, rtpConfig);
 
@@ -225,12 +225,12 @@ void WebRtcCli::createTracksAndChannels()
 
             // 创建音频轨道
             LOG_INFO("Creating audio track");
-            rtc::Description::Audio audioDesc("audio-stream"); // 使用固定流名称匹配接收端
+            rtc::Description::Audio audioDesc(Constant::TYPE_AUDIO.toStdString()); // 使用固定流名称匹配接收端
             audioDesc.addOpusCodec(111);                       // Opus payload type
 
             // 设置SSRC和媒体流标识
             uint32_t audioSSRC = 2;
-            audioDesc.addSSRC(audioSSRC, "audio-stream", msid, "audio-stream");
+            audioDesc.addSSRC(audioSSRC, Constant::TYPE_AUDIO.toStdString(), msid, Constant::TYPE_AUDIO.toStdString());
             audioDesc.setDirection(rtc::Description::Direction::SendOnly);
             m_audioTrack = m_peerConnection->addTrack(audioDesc);
 
@@ -704,7 +704,7 @@ void WebRtcCli::parseInputMsg(const QJsonObject &object)
         // 处理键盘事件
         handleKeyboardEvent(object);
     }
-    else if (msgType == "request_keyframe")
+    else if (msgType == Constant::TYPE_REQUEST_KEYFRAME)
     {
         // 处理来自控制端的关键帧请求
         LOG_INFO("🔑 Received key frame request from control side");
@@ -1066,7 +1066,7 @@ void WebRtcCli::sendUploadResponse(const QString &fileName, bool success, const 
     QJsonObject responseMsg = JsonUtil::createObject()
                                   .add(Constant::KEY_MSGTYPE, Constant::TYPE_UPLOAD_FILE_RES)
                                   .add(Constant::KEY_PATH_CLI, fileName)
-                                  .add("status", success ? "成功" : "失败")
+                                  .add("status", success)
                                   .add("message", message)
                                   .build();
 

@@ -58,17 +58,19 @@ namespace Constant {
     static const QString TYPE_OFFER = "offer";
     static const QString TYPE_ANSWER = "answer";
     static const QString TYPE_CANDIDATE = "candidate";
-    static const QString TYPE_FILE = "file";
-    static const QString TYPE_FILE_TEXT = "file_text";
-    static const QString TYPE_VIDEO = "video";
-    static const QString TYPE_AUDIO = "audio";
-    static const QString TYPE_INPUT = "input";    // 键盘鼠标输入通道
+    static const QString TYPE_FILE = "file_airan";
+    static const QString TYPE_FILE_TEXT = "file_text_airan";
+    static const QString TYPE_VIDEO = "video_airan";
+    static const QString TYPE_VIDEO_MSID = "video_stream1_airan";
+    static const QString TYPE_AUDIO = "audio_airan";
+    static const QString TYPE_INPUT = "input_airan";    // 键盘鼠标输入通道
     static const QString TYPE_DIR = "dir";
     static const QString TYPE_CONNECT = "connect";
     static const QString TYPE_CONNECTED = "connected";
     static const QString TYPE_ONLINE_ONE = "onlineOne";
     static const QString TYPE_ONLINE_LIST = "onlineList";
     static const QString TYPE_OFFLINE_ONE = "offlineOne";
+    static const QString TYPE_REQUEST_KEYFRAME = "request_keyframe";
     static const QString TYPE_ERROR = "error";
     // 控制消息类型和附加字段
     static const QString TYPE_KEYBOARD = "keyboard";

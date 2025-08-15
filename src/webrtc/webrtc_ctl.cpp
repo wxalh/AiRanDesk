@@ -89,31 +89,34 @@ void WebRtcCtl::init()
 
     // 发送CONNECT消息给被控端
     JsonObjectBuilder connectMsgBuilder = JsonUtil::createObject()
-                                 .add(Constant::KEY_ROLE, Constant::ROLE_CTL)
-                                 .add(Constant::KEY_TYPE, Constant::TYPE_CONNECT)
-                                 .add(Constant::KEY_RECEIVER, m_remoteId)
-                                 .add(Constant::KEY_RECEIVER_PWD, m_remotePwdMd5)
-                                 .add(Constant::KEY_SENDER, ConfigUtil->local_id)
-                                 .add(Constant::KEY_IS_ONLY_FILE, m_isOnlyFile)
+                                              .add(Constant::KEY_ROLE, Constant::ROLE_CTL)
+                                              .add(Constant::KEY_TYPE, Constant::TYPE_CONNECT)
+                                              .add(Constant::KEY_RECEIVER, m_remoteId)
+                                              .add(Constant::KEY_RECEIVER_PWD, m_remotePwdMd5)
+                                              .add(Constant::KEY_SENDER, ConfigUtil->local_id)
+                                              .add(Constant::KEY_IS_ONLY_FILE, m_isOnlyFile)
                                               .add(Constant::KEY_ONLY_RELAY, m_onlyRelay)
-                                 .add(Constant::KEY_FPS, ConfigUtil->fps);
+                                              .add(Constant::KEY_FPS, ConfigUtil->fps);
 
     // 如果启用了自适应分辨率，则包含控制端可显示的最大区域信息
-    if (m_adaptiveResolution) {
+    if (m_adaptiveResolution)
+    {
         QScreen *screen = QApplication::primaryScreen();
         QRect screenGeometry = screen ? screen->availableGeometry() : QRect(0, 0, 1920, 1080);
-        
+
         // 计算控制端窗口能够显示的最大内容区域（减去标题栏等UI开销）
-        int titleBarHeight = 30; // 估算标题栏高度
-        int maxContentWidth = screenGeometry.width() - 20;  // 减去边距
+        int titleBarHeight = 30;                                         // 估算标题栏高度
+        int maxContentWidth = screenGeometry.width() - 20;               // 减去边距
         int maxContentHeight = screenGeometry.height() - titleBarHeight; // 减去各种UI开销
-        
+
         connectMsgBuilder = connectMsgBuilder.add("control_max_width", maxContentWidth)
-                                           .add("control_max_height", maxContentHeight);
-        
-        LOG_INFO("Sending CONNECT message with adaptive resolution - max display area: {}x{}", 
+                                .add("control_max_height", maxContentHeight);
+
+        LOG_INFO("Sending CONNECT message with adaptive resolution - max display area: {}x{}",
                  maxContentWidth, maxContentHeight);
-    } else {
+    }
+    else
+    {
         LOG_INFO("Sending CONNECT message without adaptive resolution - client will use original resolution");
     }
 
@@ -148,7 +151,7 @@ void WebRtcCtl::initPeerConnection()
             config.iceTransportPolicy = rtc::TransportPolicy::Relay;
             LOG_INFO("Using only TURN servers for ICE transport");
         }
-        
+
         // 创建PeerConnection
         m_peerConnection = std::make_shared<rtc::PeerConnection>(config);
         LOG_INFO("PeerConnection created successfully");
@@ -171,8 +174,12 @@ void WebRtcCtl::createTracks()
     {
         // 创建视频接收轨道 - 设置RTP解包器
         LOG_INFO("Creating video receive track");
-        rtc::Description::Video videoDesc("video-stream"); // 使用固定流名称匹配发送端
-        videoDesc.addH264Codec(96);                        // 确保payload type匹配
+        std::string video_name = Constant::TYPE_VIDEO.toStdString();
+        rtc::Description::Video videoDesc(video_name); // 使用固定流名称匹配发送端
+        videoDesc.addH264Codec(96);                    // 确保payload type匹配
+        uint32_t videoSSRC = 1;
+        std::string msid = Constant::TYPE_VIDEO_MSID.toStdString();
+        videoDesc.addSSRC(videoSSRC, video_name, msid, video_name);
         videoDesc.setDirection(rtc::Description::Direction::RecvOnly);
         m_videoTrack = m_peerConnection->addTrack(videoDesc);
 
@@ -182,8 +189,9 @@ void WebRtcCtl::createTracks()
 
         // 创建音频接收轨道
         LOG_INFO("Creating audio receive track");
-        rtc::Description::Audio audioDesc("audio-stream"); // 使用固定流名称匹配发送端
-        audioDesc.addOpusCodec(111);                       // 确保payload type匹配
+        std::string audio_name = Constant::TYPE_AUDIO.toStdString();
+        rtc::Description::Audio audioDesc(audio_name); // 使用固定流名称匹配发送端
+        audioDesc.addOpusCodec(111);                   // 确保payload type匹配
         audioDesc.setDirection(rtc::Description::Direction::RecvOnly);
         m_audioTrack = m_peerConnection->addTrack(audioDesc);
 
@@ -448,11 +456,7 @@ void WebRtcCtl::setupFileTextChannelCallbacks()
                         QString ctlPath = JsonUtil::getString(object, Constant::KEY_PATH_CTL);
                         emit recvDownloadFile(true, ctlPath);
                     }
-                } else if (object.contains("type") && JsonUtil::getString(object, "type") == "request_keyframe") {
-                    // 处理关键帧请求（从被控端发送到控制端）
-                    LOG_INFO("🔑 Received key frame request from remote");
-                    // 这里可以添加处理逻辑，比如通知编码器生成关键帧
-                } else if (object.contains("type") && JsonUtil::getString(object, "type") == "keyframe_response") {
+                } else if (object.contains("type") && JsonUtil::getString(object, "type") == Constant::TYPE_REQUEST_KEYFRAME) {
                     // 处理关键帧响应
                     LOG_INFO("🔑 Received key frame response from remote");
                     // 停止重试定时器
@@ -689,7 +693,8 @@ void WebRtcCtl::uploadFile2CLI(const QString &ctlPath, const QString &cliPath)
 void WebRtcCtl::uploadSingleFile(const QString &ctlPath, const QString &cliPath)
 {
     QFileInfo fileInfo(ctlPath);
-    if (!fileInfo.exists() || !fileInfo.isFile()) {
+    if (!fileInfo.exists() || !fileInfo.isFile())
+    {
         LOG_ERROR("File does not exist or is not a regular file: {}", ctlPath);
         emit recvUploadFileRes(false, cliPath);
         return;
@@ -705,20 +710,29 @@ void WebRtcCtl::uploadSingleFile(const QString &ctlPath, const QString &cliPath)
                              .build();
 
     // 使用流式发送方法，避免将大文件加载到内存
-    if (m_fileChannel && m_fileChannel->isOpen()) {
-        try {
-            if (FilePacketUtil::sendFileStream(ctlPath, header, m_fileChannel)) {
-                LOG_INFO("Sent file stream: {} -> {} ({})", 
-                        ctlPath, cliPath, Convert::formatFileSize(fileInfo.size()));
-            } else {
+    if (m_fileChannel && m_fileChannel->isOpen())
+    {
+        try
+        {
+            if (FilePacketUtil::sendFileStream(ctlPath, header, m_fileChannel))
+            {
+                LOG_INFO("Sent file stream: {} -> {} ({})",
+                         ctlPath, cliPath, Convert::formatFileSize(fileInfo.size()));
+            }
+            else
+            {
                 LOG_ERROR("Failed to send file stream: {}", ctlPath);
                 emit recvUploadFileRes(false, cliPath);
             }
-        } catch (const std::exception &e) {
+        }
+        catch (const std::exception &e)
+        {
             LOG_ERROR("Exception during file stream send: {}", e.what());
             emit recvUploadFileRes(false, cliPath);
         }
-    } else {
+    }
+    else
+    {
         LOG_ERROR("File channel not available for uploading file");
         emit recvUploadFileRes(false, cliPath);
     }
@@ -1069,24 +1083,25 @@ void WebRtcCtl::processAudioFrame(const rtc::binary &audioData, const rtc::Frame
 void WebRtcCtl::processVideoFrame(const rtc::binary &data, const rtc::FrameInfo &frameInfo)
 {
     LOG_DEBUG("Received video frame: {}", Convert::formatFileSize(data.size()));
-    
+
     m_totalFramesReceived++;
 
     if (data.empty())
     {
         m_consecutiveEmptyFrames++;
-        LOG_WARN("Received empty video frame (consecutive: {}, total: {})", 
-                m_consecutiveEmptyFrames, m_totalFramesReceived);
-        
+        LOG_WARN("Received empty video frame (consecutive: {}, total: {})",
+                 m_consecutiveEmptyFrames, m_totalFramesReceived);
+
         // 如果连续收到太多空帧，请求关键帧
-        if (m_consecutiveEmptyFrames >= 5) {
+        if (m_consecutiveEmptyFrames >= 5)
+        {
             LOG_WARN("Too many empty frames, requesting key frame");
             requestKeyFrame();
             m_consecutiveEmptyFrames = 0; // 重置计数
         }
         return;
     }
-    
+
     // 重置空帧计数
     m_consecutiveEmptyFrames = 0;
     m_lastValidFrameTime = QDateTime::currentDateTime();
@@ -1101,12 +1116,15 @@ void WebRtcCtl::processVideoFrame(const rtc::binary &data, const rtc::FrameInfo 
 
         // 动态调整解码间隔 - 根据网络状况自适应
         int minInterval = 33; // 默认30fps
-        
+
         // 如果解码错误较多，增加间隔
-        if (m_decodingErrors > 10) {
+        if (m_decodingErrors > 10)
+        {
             minInterval = 50; // 降到20fps
             LOG_DEBUG("High error rate detected, reducing decode frequency to 20fps");
-        } else if (m_decodingErrors > 5) {
+        }
+        else if (m_decodingErrors > 5)
+        {
             minInterval = 40; // 降到25fps
         }
 
@@ -1130,7 +1148,7 @@ void WebRtcCtl::processVideoFrame(const rtc::binary &data, const rtc::FrameInfo 
                 // 成功解码，重置错误计数
                 m_decodingErrors = 0;
                 m_waitingForKeyFrame = false;
-                
+
                 // 发射信号显示解码后的图像
                 emit videoFrameDecoded(decodedFrame);
                 LOG_DEBUG("Successfully decoded video frame: {}x{}", decodedFrame.width(), decodedFrame.height());
@@ -1141,15 +1159,16 @@ void WebRtcCtl::processVideoFrame(const rtc::binary &data, const rtc::FrameInfo 
                 m_decodingErrors++;
                 static int failureCount = 0;
                 failureCount++;
-                
+
                 if (failureCount % 10 == 0)
                 {
-                    LOG_WARN("Failed to decode video frame (total failures: {}, errors: {})", 
-                            failureCount, m_decodingErrors);
+                    LOG_WARN("Failed to decode video frame (total failures: {}, errors: {})",
+                             failureCount, m_decodingErrors);
                 }
-                
+
                 // 如果解码错误较多，请求关键帧
-                if (m_decodingErrors >= 5 && !m_waitingForKeyFrame) {
+                if (m_decodingErrors >= 5 && !m_waitingForKeyFrame)
+                {
                     LOG_WARN("High decode error rate, requesting key frame");
                     requestKeyFrame();
                     m_waitingForKeyFrame = true;
@@ -1171,30 +1190,33 @@ void WebRtcCtl::processVideoFrame(const rtc::binary &data, const rtc::FrameInfo 
 // 请求关键帧
 void WebRtcCtl::requestKeyFrame()
 {
-    if (!m_inputChannel || !m_inputChannel->isOpen()) {
+    if (!m_inputChannel || !m_inputChannel->isOpen())
+    {
         LOG_WARN("Input channel not available for key frame request");
         return;
     }
-    
-    try {
+
+    try
+    {
         QJsonObject keyFrameRequest = JsonUtil::createObject()
-            .add(Constant::KEY_MSGTYPE, "request_keyframe")
-            .add(Constant::KEY_SENDER, ConfigUtil->local_id)
-            .add(Constant::KEY_RECEIVER, m_remoteId)
-            .add(Constant::KEY_RECEIVER_PWD, m_remotePwdMd5)
-            .add("timestamp", QDateTime::currentMSecsSinceEpoch())
-            .add("reason", "network_error_recovery")
-            .build();
-        
+                                          .add(Constant::KEY_MSGTYPE, Constant::TYPE_REQUEST_KEYFRAME)
+                                          .add(Constant::KEY_SENDER, ConfigUtil->local_id)
+                                          .add(Constant::KEY_RECEIVER, m_remoteId)
+                                          .add(Constant::KEY_RECEIVER_PWD, m_remotePwdMd5)
+                                          .add("timestamp", QDateTime::currentMSecsSinceEpoch())
+                                          .add("reason", "network_error_recovery")
+                                          .build();
+
         QString message = JsonUtil::toCompactString(keyFrameRequest);
         m_inputChannel->send(message.toStdString());
-        
+
         LOG_INFO("🔑 Requested key frame for error recovery via inputChannel");
-        
+
         // 设置超时重试
         m_keyFrameRequestTimer->start(2000); // 2秒后再次请求
-        
-    } catch (const std::exception &e) {
+    }
+    catch (const std::exception &e)
+    {
         LOG_ERROR("Failed to send key frame request: {}", e.what());
     }
 }
@@ -1206,11 +1228,12 @@ void WebRtcCtl::resetVideoState()
     m_decodingErrors = 0;
     m_waitingForKeyFrame = true;
     m_lastValidFrameTime = QDateTime::currentDateTime();
-    
+
     // 停止关键帧请求定时器
-    if (m_keyFrameRequestTimer->isActive()) {
+    if (m_keyFrameRequestTimer->isActive())
+    {
         m_keyFrameRequestTimer->stop();
     }
-    
+
     LOG_INFO("🔄 Video state reset - waiting for key frame");
 }
