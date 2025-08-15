@@ -28,6 +28,7 @@ public:
     // 初始化编码器
     bool initialize(int width, int height, int fps = 30, int bitrate = 2000000);
     
+    void forceKeyFrame();
     // 编码QImage为H264数据
     rtc::binary encodeFrame(const QImage& image);
     
@@ -71,6 +72,7 @@ private:
     enum AVPixelFormat m_hwPixelFormat;
     
     bool m_initialized;
+    bool m_forceKeyFrame;
 };
 
 #endif // H264_ENCODER_H

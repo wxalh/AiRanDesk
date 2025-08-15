@@ -154,9 +154,9 @@ signals:
     void startAudioCaptureSignal(int sampleRate, int channels);
     void stopAudioCaptureSignal();
     void frameReceived();
-    void requestKeyFrameSignal(); // 内部信号，传递关键帧请求到工作线程
     void setResolutionSignal(int width, int height); // 内部信号，传递分辨率设置到工作线程
     void setFpsSignal(int fps); // 内部信号，传递帧率设置到工作线程
+    void requestKeyFrameSignal(); // 内部信号，请求强制生成关键帧
 };
 
 #endif // MEDIA_CAPTURE_H

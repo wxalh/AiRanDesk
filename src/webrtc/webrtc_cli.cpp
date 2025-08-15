@@ -704,7 +704,7 @@ void WebRtcCli::parseInputMsg(const QJsonObject &object)
         // 处理键盘事件
         handleKeyboardEvent(object);
     }
-    else if (msgType == Constant::TYPE_REQUEST_KEYFRAME)
+    else if (msgType == Constant::TYPE_KEYFRAME_REQUEST)
     {
         // 处理来自控制端的关键帧请求
         LOG_INFO("🔑 Received key frame request from control side");
@@ -716,7 +716,7 @@ void WebRtcCli::parseInputMsg(const QJsonObject &object)
         
         // 发送响应确认
         QJsonObject response = JsonUtil::createObject()
-            .add(Constant::KEY_MSGTYPE, "keyframe_response")
+            .add(Constant::KEY_MSGTYPE, Constant::TYPE_KEYFRAME_RESPONSE)
             .add(Constant::KEY_SENDER, ConfigUtil->local_id)
             .add(Constant::KEY_RECEIVER, m_remoteId)
             .add("timestamp", QDateTime::currentMSecsSinceEpoch())

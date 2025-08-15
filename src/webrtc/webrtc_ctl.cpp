@@ -29,12 +29,7 @@ WebRtcCtl::WebRtcCtl(const QString &remoteId, const QString &remotePwdMd5,
       m_adaptiveResolution(adaptiveResolution),
       m_onlyRelay(onlyRelay),
       m_sdpSent(false),
-      m_waitingForKeyFrame(true), // 初始时等待关键帧
-      m_consecutiveEmptyFrames(0),
-      m_totalFramesReceived(0),
-      m_decodingErrors(0),
-      m_lastValidFrameTime(QDateTime::currentDateTime()),
-      m_keyFrameRequestTimer(new QTimer(this))
+      m_waitingForKeyFrame(true) // 初始时等待关键帧
 {
     // 初始化ICE服务器配置
     m_host = ConfigUtil->ice_host.toStdString();
@@ -50,10 +45,6 @@ WebRtcCtl::WebRtcCtl(const QString &remoteId, const QString &remotePwdMd5,
             this, &WebRtcCtl::recvDownloadFile);
     connect(m_filePacketUtil.get(), &FilePacketUtil::fileReceived,
             this, &WebRtcCtl::recvDownloadFile);
-
-    // 设置关键帧请求定时器
-    m_keyFrameRequestTimer->setSingleShot(true);
-    connect(m_keyFrameRequestTimer, &QTimer::timeout, this, &WebRtcCtl::requestKeyFrame);
 
     LOG_INFO("created for remote: {}", m_remoteId);
 }
@@ -75,7 +66,7 @@ void WebRtcCtl::init()
         m_h264Decoder->initialize();
         // 初始化媒体播放器
         m_mediaPlayer = std::make_unique<MediaPlayer>();
-        m_mediaPlayer->startPlayback(); // 启动音频播放
+        // m_mediaPlayer->startPlayback(); // 启动音频播放
     }
     // 初始化WebRTC
     initPeerConnection();
@@ -456,13 +447,9 @@ void WebRtcCtl::setupFileTextChannelCallbacks()
                         QString ctlPath = JsonUtil::getString(object, Constant::KEY_PATH_CTL);
                         emit recvDownloadFile(true, ctlPath);
                     }
-                } else if (object.contains("type") && JsonUtil::getString(object, "type") == Constant::TYPE_REQUEST_KEYFRAME) {
+                } else if (object.contains("type") && JsonUtil::getString(object, "type") == Constant::TYPE_KEYFRAME_RESPONSE) {
                     // 处理关键帧响应
                     LOG_INFO("🔑 Received key frame response from remote");
-                    // 停止重试定时器
-                    if (m_keyFrameRequestTimer->isActive()) {
-                        m_keyFrameRequestTimer->stop();
-                    }
                 } else {
                     // 处理其他文件相关响应
                     LOG_INFO("Emitting recvGetFileList signal for unknown type");
@@ -881,175 +868,6 @@ void WebRtcCtl::destroy()
     LOG_INFO("WebRtcCtl destroyed");
 }
 
-// 处理接收到的H264数据（已经过RTP解包）
-void WebRtcCtl::processVideoH264(const rtc::binary &h264Data)
-{
-    LOG_DEBUG("Received H264 NAL unit after RTP depacketization: {}", Convert::formatFileSize(h264Data.size()));
-
-    if (h264Data.empty())
-    {
-        LOG_WARN("Received empty H264 data");
-        return;
-    }
-
-    QMutexLocker locker(&m_h264BufferMutex);
-
-    // 检查NAL单元类型
-    if (h264Data.size() >= 4)
-    {
-        uint8_t nalType = 0;
-        bool hasStartCode = false;
-
-        // 检查是否有起始码并获取NAL类型
-        if (h264Data[0] == std::byte(0x00) &&
-            h264Data[1] == std::byte(0x00) &&
-            h264Data[2] == std::byte(0x00) &&
-            h264Data[3] == std::byte(0x01))
-        {
-            // 0x00000001起始码
-            if (h264Data.size() > 4)
-            {
-                nalType = static_cast<uint8_t>(h264Data[4]) & 0x1F;
-                hasStartCode = true;
-            }
-        }
-        else if (h264Data[0] == std::byte(0x00) &&
-                 h264Data[1] == std::byte(0x00) &&
-                 h264Data[2] == std::byte(0x01))
-        {
-            // 0x000001起始码
-            if (h264Data.size() > 3)
-            {
-                nalType = static_cast<uint8_t>(h264Data[3]) & 0x1F;
-                hasStartCode = true;
-            }
-        }
-        else
-        {
-            // 没有起始码，直接获取NAL类型
-            nalType = static_cast<uint8_t>(h264Data[0]) & 0x1F;
-        }
-
-        LOG_DEBUG("NAL unit type: {}, hasStartCode: {}", nalType, hasStartCode);
-
-        // 检查是否是关键帧起始（SPS=7, PPS=8, IDR=5）
-        bool isKeyFrame = (nalType == 5);                     // IDR帧
-        bool isParameterSet = (nalType == 7 || nalType == 8); // SPS或PPS
-        bool isSlice = (nalType == 1);                        // P帧切片
-
-        // 放宽关键帧等待条件 - 允许处理更多NAL类型
-        if (m_waitingForKeyFrame && (isKeyFrame || isParameterSet))
-        {
-            LOG_DEBUG("Received key frame data (NAL type: {}), starting decoding", nalType);
-            m_waitingForKeyFrame = false;
-            m_h264FrameBuffer.clear();
-        }
-
-        // 如果等待关键帧超过一定时间，强制开始处理
-        static auto firstNalTime = std::chrono::steady_clock::now();
-        auto currentTime = std::chrono::steady_clock::now();
-        auto elapsed = std::chrono::duration_cast<std::chrono::seconds>(currentTime - firstNalTime).count();
-
-        if (m_waitingForKeyFrame && elapsed > 5)
-        { // 5秒后强制开始
-            LOG_WARN("Forcing decode start after 5 seconds timeout, NAL type: {}", nalType);
-            m_waitingForKeyFrame = false;
-            m_h264FrameBuffer.clear();
-        }
-
-        // 现在处理所有类型的NAL单元
-        if (m_waitingForKeyFrame && !isParameterSet && !isKeyFrame && !isSlice)
-        {
-            LOG_DEBUG("Skipping NAL type {} while waiting for key frame", nalType);
-            return;
-        }
-
-        // 如果没有起始码，添加起始码
-        if (!hasStartCode)
-        {
-            m_h264FrameBuffer.insert(m_h264FrameBuffer.end(), {std::byte(0x00), std::byte(0x00), std::byte(0x00), std::byte(0x01)});
-        }
-
-        // 累积NAL单元数据
-        m_h264FrameBuffer.insert(m_h264FrameBuffer.end(), h264Data.begin(), h264Data.end());
-
-        // 如果缓冲区足够大，尝试解码
-        if (m_h264FrameBuffer.size() >= 64)
-        { // 最小帧大小阈值
-            tryDecodeAccumulatedFrame();
-        }
-
-        // 如果缓冲区过大，清理并重置
-        if (m_h264FrameBuffer.size() > 10 * 1024 * 1024)
-        { // 10MB限制
-            LOG_WARN("H264 buffer too large ({}), clearing", m_h264FrameBuffer.size());
-            m_h264FrameBuffer.clear();
-            m_waitingForKeyFrame = true;
-        }
-    }
-}
-
-// 尝试解码累积的帧数据
-void WebRtcCtl::tryDecodeAccumulatedFrame()
-{
-    if (m_h264FrameBuffer.empty())
-    {
-        return;
-    }
-
-    try
-    {
-        if (m_h264Decoder)
-        {
-            // 限制缓冲区大小，避免内存过度使用
-            if (m_h264FrameBuffer.size() > 5 * 1024 * 1024) // 5MB限制
-            {
-                LOG_WARN("H264 buffer too large ({}), clearing and waiting for keyframe", m_h264FrameBuffer.size());
-                m_h264FrameBuffer.clear();
-                m_waitingForKeyFrame = true;
-                return;
-            }
-
-            QImage decodedFrame = m_h264Decoder->decodeFrame(m_h264FrameBuffer);
-            if (!decodedFrame.isNull())
-            {
-                emit videoFrameDecoded(decodedFrame);
-                LOG_DEBUG("Successfully decoded H264 frame: {}x{} from {}",
-                          decodedFrame.width(), decodedFrame.height(), Convert::formatFileSize(m_h264FrameBuffer.size()));
-
-                // 解码成功，清理缓冲区
-                m_h264FrameBuffer.clear();
-            }
-            else
-            {
-                // 解码失败，检查缓冲区大小
-                if (m_h264FrameBuffer.size() > 1024 * 1024) // 1MB
-                {
-                    LOG_DEBUG("Frame decode failed with large buffer ({}), clearing", m_h264FrameBuffer.size());
-                    m_h264FrameBuffer.clear();
-                    m_waitingForKeyFrame = true;
-                }
-                else
-                {
-                    LOG_DEBUG("Frame decode pending, buffer size: {}", Convert::formatFileSize(m_h264FrameBuffer.size()));
-                }
-            }
-        }
-        else
-        {
-            LOG_WARN("H264 decoder not initialized");
-            m_h264FrameBuffer.clear(); // 清理无效缓冲区
-        }
-    }
-    catch (const std::exception &e)
-    {
-        LOG_ERROR("Error decoding accumulated H264 frame: {}", e.what());
-        // 出错时清理缓冲区并重置状态
-        m_h264FrameBuffer.clear();
-        m_waitingForKeyFrame = true;
-    }
-}
-
 // 处理接收到的音频数据
 void WebRtcCtl::processAudioFrame(const rtc::binary &audioData, const rtc::FrameInfo &frameInfo)
 {
@@ -1084,49 +902,19 @@ void WebRtcCtl::processVideoFrame(const rtc::binary &data, const rtc::FrameInfo 
 {
     LOG_DEBUG("Received video frame: {}", Convert::formatFileSize(data.size()));
 
-    m_totalFramesReceived++;
-
     if (data.empty())
     {
-        m_consecutiveEmptyFrames++;
-        LOG_WARN("Received empty video frame (consecutive: {}, total: {})",
-                 m_consecutiveEmptyFrames, m_totalFramesReceived);
-
-        // 如果连续收到太多空帧，请求关键帧
-        if (m_consecutiveEmptyFrames >= 5)
-        {
-            LOG_WARN("Too many empty frames, requesting key frame");
-            requestKeyFrame();
-            m_consecutiveEmptyFrames = 0; // 重置计数
-        }
         return;
     }
-
-    // 重置空帧计数
-    m_consecutiveEmptyFrames = 0;
-    m_lastValidFrameTime = QDateTime::currentDateTime();
 
     try
     {
         // 限制解码频率，避免内存压力过大
         static auto lastDecodeTime = std::chrono::steady_clock::now();
         static int frameDropCount = 0;
+        static int minInterval = 1000 / ConfigUtil->fps; // 默认30fps
         auto currentTime = std::chrono::steady_clock::now();
         auto elapsed = std::chrono::duration_cast<std::chrono::milliseconds>(currentTime - lastDecodeTime);
-
-        // 动态调整解码间隔 - 根据网络状况自适应
-        int minInterval = 33; // 默认30fps
-
-        // 如果解码错误较多，增加间隔
-        if (m_decodingErrors > 10)
-        {
-            minInterval = 50; // 降到20fps
-            LOG_DEBUG("High error rate detected, reducing decode frequency to 20fps");
-        }
-        else if (m_decodingErrors > 5)
-        {
-            minInterval = 40; // 降到25fps
-        }
 
         if (elapsed.count() < minInterval)
         {
@@ -1145,10 +933,6 @@ void WebRtcCtl::processVideoFrame(const rtc::binary &data, const rtc::FrameInfo 
             QImage decodedFrame = m_h264Decoder->decodeFrame(data);
             if (!decodedFrame.isNull())
             {
-                // 成功解码，重置错误计数
-                m_decodingErrors = 0;
-                m_waitingForKeyFrame = false;
-
                 // 发射信号显示解码后的图像
                 emit videoFrameDecoded(decodedFrame);
                 LOG_DEBUG("Successfully decoded video frame: {}x{}", decodedFrame.width(), decodedFrame.height());
@@ -1156,23 +940,8 @@ void WebRtcCtl::processVideoFrame(const rtc::binary &data, const rtc::FrameInfo 
             else
             {
                 // 解码失败处理
-                m_decodingErrors++;
-                static int failureCount = 0;
-                failureCount++;
-
-                if (failureCount % 10 == 0)
-                {
-                    LOG_WARN("Failed to decode video frame (total failures: {}, errors: {})",
-                             failureCount, m_decodingErrors);
-                }
-
-                // 如果解码错误较多，请求关键帧
-                if (m_decodingErrors >= 5 && !m_waitingForKeyFrame)
-                {
-                    LOG_WARN("High decode error rate, requesting key frame");
-                    requestKeyFrame();
-                    m_waitingForKeyFrame = true;
-                }
+                requestKeyFrame();
+                m_waitingForKeyFrame = true;
             }
         }
         else
@@ -1182,7 +951,6 @@ void WebRtcCtl::processVideoFrame(const rtc::binary &data, const rtc::FrameInfo 
     }
     catch (const std::exception &e)
     {
-        m_decodingErrors++;
         LOG_ERROR("Error processing video frame: {}", e.what());
     }
 }
@@ -1199,7 +967,7 @@ void WebRtcCtl::requestKeyFrame()
     try
     {
         QJsonObject keyFrameRequest = JsonUtil::createObject()
-                                          .add(Constant::KEY_MSGTYPE, Constant::TYPE_REQUEST_KEYFRAME)
+                                          .add(Constant::KEY_MSGTYPE, Constant::TYPE_KEYFRAME_REQUEST)
                                           .add(Constant::KEY_SENDER, ConfigUtil->local_id)
                                           .add(Constant::KEY_RECEIVER, m_remoteId)
                                           .add(Constant::KEY_RECEIVER_PWD, m_remotePwdMd5)
@@ -1211,29 +979,9 @@ void WebRtcCtl::requestKeyFrame()
         m_inputChannel->send(message.toStdString());
 
         LOG_INFO("🔑 Requested key frame for error recovery via inputChannel");
-
-        // 设置超时重试
-        m_keyFrameRequestTimer->start(2000); // 2秒后再次请求
     }
     catch (const std::exception &e)
     {
         LOG_ERROR("Failed to send key frame request: {}", e.what());
     }
-}
-
-// 重置视频状态
-void WebRtcCtl::resetVideoState()
-{
-    m_consecutiveEmptyFrames = 0;
-    m_decodingErrors = 0;
-    m_waitingForKeyFrame = true;
-    m_lastValidFrameTime = QDateTime::currentDateTime();
-
-    // 停止关键帧请求定时器
-    if (m_keyFrameRequestTimer->isActive())
-    {
-        m_keyFrameRequestTimer->stop();
-    }
-
-    LOG_INFO("🔄 Video state reset - waiting for key frame");
 }

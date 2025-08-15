@@ -121,17 +121,6 @@ void CaptureWorker::captureFrame()
     if (!m_running)
         return;
 
-    // 检查是否需要强制生成关键帧
-    bool forceKey = false;
-    {
-        QMutexLocker locker(&m_mutex);
-        if (m_forceKeyFrame)
-        {
-            m_forceKeyFrame = false; // 重置标志
-            forceKey = true;
-        }
-    }
-
     // 截图并编码为H264
     rtc::binary h264Data = captureScreenH264();
     if (!h264Data.empty())
@@ -139,11 +128,6 @@ void CaptureWorker::captureFrame()
         QMutexLocker locker(&m_mutex);
         m_lastFrameTime = QDateTime::currentMSecsSinceEpoch();
         locker.unlock();
-
-        if (forceKey)
-        {
-            LOG_INFO("🔑 Generated key frame in response to request");
-        }
 
         emit frameReady(h264Data);
         LOG_DEBUG("Captured and sent video frame: {}", Convert::formatFileSize(h264Data.size()));
@@ -163,6 +147,23 @@ rtc::binary CaptureWorker::captureScreenH264()
     if (pixmap.isNull())
     {
         return rtc::binary();
+    }
+
+    // 检查是否需要强制生成关键帧
+    bool forceKey = false;
+    {
+        QMutexLocker locker(&m_mutex);
+        if (m_forceKeyFrame)
+        {
+            m_forceKeyFrame = false; // 重置标志
+            forceKey = true;
+        }
+    }
+
+    if (forceKey)
+    {
+        m_encoder->forceKeyFrame();
+        LOG_INFO("🔑 Generated key frame in response to request");
     }
 
     // 转换为QImage

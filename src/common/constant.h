@@ -70,7 +70,8 @@ namespace Constant {
     static const QString TYPE_ONLINE_ONE = "onlineOne";
     static const QString TYPE_ONLINE_LIST = "onlineList";
     static const QString TYPE_OFFLINE_ONE = "offlineOne";
-    static const QString TYPE_REQUEST_KEYFRAME = "request_keyframe";
+    static const QString TYPE_KEYFRAME_REQUEST = "keyframe_request";
+    static const QString TYPE_KEYFRAME_RESPONSE = "keyframe_response";
     static const QString TYPE_ERROR = "error";
     // 控制消息类型和附加字段
     static const QString TYPE_KEYBOARD = "keyboard";
