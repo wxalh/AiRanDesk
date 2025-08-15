@@ -377,7 +377,7 @@ void ControlWindow::updateImg(const QImage &img)
         int nonZeroBytes = 0;
 
         // 采样检查前1000字节
-        int checkBytes = std::min(1000, totalBytes);
+        int checkBytes = qMin(1000, totalBytes);
         for (int i = 0; i < checkBytes; i++)
         {
             if (bits[i] != 0)

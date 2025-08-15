@@ -530,7 +530,7 @@ void MediaCapture::startCapture(int width, int height, int fps)
     // 设置参数
     m_width = width;
     m_height = height;
-    m_fps = std::max(1, std::min(fps, 60)); // 限制帧率在1-60之间
+    m_fps = qMax(1, qMin(fps, 60)); // 限制帧率在1-60之间
 
     // 创建工作线程
     m_captureThread = new QThread(this);
@@ -712,7 +712,7 @@ void MediaCapture::setFps(int fps)
 {
     if (m_isCapturing && m_captureWorker)
     {
-        m_fps = std::max(1, std::min(fps, 60)); // 限制帧率在1-60之间
+        m_fps = qMax(1, qMin(fps, 60)); // 限制帧率在1-60之间
         LOG_INFO("🎬 MediaCapture: Setting FPS to {}", m_fps);
         emit setFpsSignal(m_fps);
     }
@@ -720,6 +720,6 @@ void MediaCapture::setFps(int fps)
     {
         LOG_WARN("Cannot set FPS - capture not active");
         // 保存参数，下次启动时使用
-        m_fps = std::max(1, std::min(fps, 60));
+        m_fps = qMax(1, qMin(fps, 60));
     }
 }
