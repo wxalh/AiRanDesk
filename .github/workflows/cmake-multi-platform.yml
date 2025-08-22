@@ -14,10 +14,14 @@ jobs:
     timeout-minutes: 4320
     steps:
       - uses: actions/checkout@v4
+      - name: Clone vcpkg
+        run: git clone https://github.com/microsoft/vcpkg.git
+      - name: Bootstrap vcpkg
+        run: .\vcpkg\bootstrap-vcpkg.bat
       - name: Cache vcpkg
         uses: actions/cache@v4
         with:
-          path: vcpkg_installed
+          path: vcpkg\installed
           key: vcpkg-win32-${{ hashFiles('vcpkg.json') }}
           restore-keys: |
             vcpkg-win32-
@@ -40,10 +44,14 @@ jobs:
     timeout-minutes: 4320
     steps:
       - uses: actions/checkout@v4
+      - name: Clone vcpkg
+        run: git clone https://github.com/microsoft/vcpkg.git
+      - name: Bootstrap vcpkg
+        run: .\vcpkg\bootstrap-vcpkg.bat
       - name: Cache vcpkg
         uses: actions/cache@v4
         with:
-          path: vcpkg_installed
+          path: vcpkg\installed
           key: vcpkg-win64-${{ hashFiles('vcpkg.json') }}
           restore-keys: |
             vcpkg-win64-
@@ -66,10 +74,14 @@ jobs:
     timeout-minutes: 4320
     steps:
       - uses: actions/checkout@v4
+      - name: Clone vcpkg
+        run: git clone https://github.com/microsoft/vcpkg.git
+      - name: Bootstrap vcpkg
+        run: .\vcpkg\bootstrap-vcpkg.bat
       - name: Cache vcpkg
         uses: actions/cache@v4
         with:
-          path: vcpkg_installed
+          path: vcpkg\installed
           key: vcpkg-arm-${{ hashFiles('vcpkg.json') }}
           restore-keys: |
             vcpkg-arm-
@@ -97,10 +109,14 @@ jobs:
           sudo apt update
           sudo apt install -y nasm pkg-config meson ninja-build build-essential python3 python3-jinja2 libdbus-1-dev libxi-dev libxtst-dev
           sudo apt install -y '^libxcb.*-dev' libx11-xcb-dev libgl1-mesa-dev libxrender-dev libxi-dev libxkbcommon-dev libxkbcommon-x11-dev libfontconfig1-dev libfreetype6-dev libharfbuzz-dev
+      - name: Clone vcpkg
+        run: git clone https://github.com/microsoft/vcpkg.git
+      - name: Bootstrap vcpkg
+        run: ./vcpkg/bootstrap-vcpkg.sh
       - name: Cache vcpkg
         uses: actions/cache@v4
         with:
-          path: vcpkg_installed
+          path: vcpkg/installed
           key: vcpkg-ubuntu-${{ hashFiles('vcpkg.json') }}
           restore-keys: |
             vcpkg-ubuntu-
@@ -123,10 +139,14 @@ jobs:
     timeout-minutes: 4320
     steps:
       - uses: actions/checkout@v4
+      - name: Clone vcpkg
+        run: git clone https://github.com/microsoft/vcpkg.git
+      - name: Bootstrap vcpkg
+        run: ./vcpkg/bootstrap-vcpkg.sh
       - name: Cache vcpkg
         uses: actions/cache@v4
         with:
-          path: vcpkg_installed
+          path: vcpkg/installed
           key: vcpkg-macos-${{ hashFiles('vcpkg.json') }}
           restore-keys: |
             vcpkg-macos-
