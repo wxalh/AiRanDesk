@@ -615,9 +615,16 @@ padding: 0 8px;
   </widget>
  </widget>
  <tabstops>
-  <tabstop>btn_conn</tabstop>
+  <tabstop>remote_id</tabstop>
+  <tabstop>remote_pwd</tabstop>
   <tabstop>remote_desktop</tabstop>
   <tabstop>remote_file</tabstop>
+  <tabstop>adaptive_resolution</tabstop>
+  <tabstop>only_relay</tabstop>
+  <tabstop>btn_conn</tabstop>
+  <tabstop>local_pwd_change</tabstop>
+  <tabstop>local_share</tabstop>
+  <tabstop>local_pwd</tabstop>
   <tabstop>local_id</tabstop>
  </tabstops>
  <resources/>

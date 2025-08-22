@@ -3,12 +3,49 @@
 
 #include <QString>
 #include "convert.h"
+#include <QThread>
 
-namespace Constant {
+#define DELETE_PTR_FUNC(obj_ptr) \
+    if (obj_ptr)                 \
+    {                            \
+        obj_ptr->disconnect();   \
+        delete obj_ptr;          \
+        obj_ptr = nullptr;       \
+    }
+
+#define STOP_OBJ_THREAD(thread)                                                               \
+    if (thread.isRunning())                                                                   \
+    {                                                                                         \
+        LOG_ERROR("{} thread stopping", thread.objectName());                                 \
+        thread.quit();                                                                        \
+        if (!thread.wait(200))                                                                \
+        {                                                                                     \
+            LOG_ERROR("{} thread did not quit gracefully, terminating", thread.objectName()); \
+            thread.terminate();                                                               \
+            thread.wait();                                                                    \
+        }                                                                                     \
+        LOG_INFO("{} thread stopped", thread.objectName());                                   \
+    }
+
+#define STOP_PTR_THREAD(thread_ptr)                                                                \
+    if (thread_ptr && thread_ptr->isRunning())                                                     \
+    {                                                                                              \
+        LOG_ERROR("{} thread stopping", thread_ptr->objectName());                                 \
+        thread_ptr->quit();                                                                        \
+        if (!thread_ptr->wait(200))                                                                \
+        {                                                                                          \
+            LOG_ERROR("{} thread did not quit gracefully, terminating", thread_ptr->objectName()); \
+            thread_ptr->terminate();                                                               \
+            thread_ptr->wait();                                                                    \
+        }                                                                                          \
+        LOG_INFO("{} thread stopped", thread_ptr->objectName());                                   \
+    }
+
+namespace Constant
+{
     static const QString MSG_TYPE_BINARY = "binary";
     static const QString MSG_TYPE_TEXT = "text";
     static const QString MSG_TYPE_OTHER = "other";
-
 
     static const QString KEY_NAME = "name";
     static const QString KEY_STATUS = "status";
@@ -16,7 +53,7 @@ namespace Constant {
     static const QString KEY_ROLE = "role";
     static const QString KEY_SENDER = "sender";
     static const QString KEY_RECEIVER = "receiver";
-    static const QString KEY_TYPE = "type";// websocket发送消息的type
+    static const QString KEY_TYPE = "type"; // websocket发送消息的type
     static const QString KEY_DATA = "data";
     static const QString KEY_MID = "mid";
     static const QString KEY_HEIGHT = "height";
@@ -25,7 +62,6 @@ namespace Constant {
     static const QString KEY_LABEL_NAME = "label_name";
     static const QString KEY_IS_ONLY_FILE = "is_only_file";
     static const QString KEY_ONLY_RELAY = "only_relay";
-
 
     static const QString KEY_FILE_PATH = "file_path";
     static const QString KEY_FILE_DATA = "file_data";
@@ -45,7 +81,6 @@ namespace Constant {
     static const QString ROLE_CTL = "ctl";
     static const QString ROLE_SERVER = "server";
 
-
     static const QString TYPE_LIST_FOLDER_FILES = "listFolderFiles";
     static const QString TYPE_UPLOAD_FILE = "upload_file";
     static const QString TYPE_UPLOAD_FILE_RES = "upload_file_res";
@@ -63,7 +98,7 @@ namespace Constant {
     static const QString TYPE_VIDEO = "video_airan";
     static const QString TYPE_VIDEO_MSID = "video_stream1_airan";
     static const QString TYPE_AUDIO = "audio_airan";
-    static const QString TYPE_INPUT = "input_airan";    // 键盘鼠标输入通道
+    static const QString TYPE_INPUT = "input_airan"; // 键盘鼠标输入通道
     static const QString TYPE_DIR = "dir";
     static const QString TYPE_CONNECT = "connect";
     static const QString TYPE_CONNECTED = "connected";
@@ -88,7 +123,7 @@ namespace Constant {
     static const QString KEY_DOUBLECLICK = "doubleClick";
     static const QString KEY_BUTTON = "button";
     static const QString KEY_MOUSEDATA = "mouseData";
-    static const QString KEY_FOLDER_MOUNTED = "mounted"; // 这个常量用于表示已挂载的驱动器
+    static const QString KEY_FOLDER_MOUNTED = "mounted";   // 这个常量用于表示已挂载的驱动器
     static const QString KEY_FOLDER_FILES = "folderFiles"; // 这个常量用于表示文件夹中的文件
 
     static const QString START_CAPTURE = "startCapture";

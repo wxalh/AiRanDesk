@@ -19,16 +19,7 @@ FileTransferWindow::FileTransferWindow(QString remoteId, QString remotePwdMd5, W
 FileTransferWindow::~FileTransferWindow()
 {
     disconnect();
-    if (m_rtc_ctl_thread.isRunning())
-    {
-        m_rtc_ctl_thread.quit();
-        if(!m_rtc_ctl_thread.wait(3000))
-        {
-            LOG_WARN("WebRtcCtl thread did not quit gracefully, terminating");
-            m_rtc_ctl_thread.terminate();
-            m_rtc_ctl_thread.wait(1000);
-        }
-    }
+    STOP_OBJ_THREAD(m_rtc_ctl_thread);
     delete ui;
 }
 
@@ -82,6 +73,7 @@ void FileTransferWindow::initCLI()
     connect(&m_rtc_ctl, &WebRtcCtl::recvDownloadFile, this, &FileTransferWindow::recvDownloadFile);
     connect(&m_rtc_ctl, &WebRtcCtl::recvUploadFileRes, this, &FileTransferWindow::recvUploadFileRes);
 
+    m_rtc_ctl_thread.setObjectName("FileTransferWindow-WebRtcCtlThread");
     m_rtc_ctl.moveToThread(&m_rtc_ctl_thread);
     m_rtc_ctl_thread.start();
 }

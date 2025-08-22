@@ -109,7 +109,7 @@ signals:
     void sendWsCliTextMsg(const QString &message);
 
     // 数据通道事件
-    void destroyCli(const QString &m_remoteId);
+    void destroyCli();
     
     // 媒体控制事件
     void requestKeyFrameFromCapture(); // 请求媒体捕获生成关键帧

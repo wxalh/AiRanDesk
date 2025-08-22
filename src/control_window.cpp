@@ -59,18 +59,7 @@ ControlWindow::~ControlWindow()
     }
     
     // 停止并清理WebRTC控制线程
-    if (m_rtc_ctl_thread.isRunning())
-    {
-        LOG_DEBUG("Stopping WebRtcCtl thread");
-        m_rtc_ctl_thread.quit();
-        if (!m_rtc_ctl_thread.wait(3000))
-        {
-            LOG_WARN("WebRtcCtl thread did not quit gracefully, terminating");
-            m_rtc_ctl_thread.terminate();
-            m_rtc_ctl_thread.wait(1000);
-        }
-        LOG_DEBUG("WebRtcCtl thread stopped");
-    }
+    STOP_OBJ_THREAD(m_rtc_ctl_thread);
     
     LOG_DEBUG("ControlWindow destructor finished");
 }
@@ -188,6 +177,7 @@ void ControlWindow::initCLI()
 
     connect(&m_rtc_ctl, &WebRtcCtl::videoFrameDecoded, this, &ControlWindow::updateImg);
 
+    m_rtc_ctl_thread.setObjectName("ControlWindow-WebRtcCtlThread");
     m_rtc_ctl.moveToThread(&m_rtc_ctl_thread);
     m_rtc_ctl_thread.start();
 }

@@ -24,16 +24,7 @@ MainWindow::MainWindow(QWidget *parent)
 MainWindow::~MainWindow()
 {
     disconnect();
-    if (m_ws_thread.isRunning())
-    {
-        m_ws_thread.quit();
-        if (!m_ws_thread.wait(3000))
-        {
-            LOG_WARN("websocket thread did not quit gracefully, terminating");
-            m_ws_thread.terminate();
-            m_ws_thread.wait(1000);
-        }
-    }
+    STOP_OBJ_THREAD(m_ws_thread);
     delete ui;
 }
 
@@ -61,6 +52,7 @@ void MainWindow::initCli()
     connect(this, &MainWindow::sendWsCliTextMsg, &m_ws, &WsCli::sendWsCliTextMsg);
 
     // 将WebSocket客户端移动到工作线程
+    m_ws_thread.setObjectName("WsCliThread");
     m_ws.moveToThread(&m_ws_thread);
     m_ws_thread.start();
     QString wsUrl = ConfigUtil->wsUrl;
@@ -115,7 +107,7 @@ void MainWindow::on_btn_conn_clicked()
     QString remote_id = ui->remote_id->text();
     QString remote_pwd = ui->remote_pwd->text();
 
-    if (remote_id.isEmpty()|| remote_pwd.isEmpty())
+    if (remote_id.isEmpty() || remote_pwd.isEmpty())
     {
         LOG_ERROR("错误,远端识别码和密码不能为空");
         if (ConfigUtil->showUI)
@@ -277,17 +269,20 @@ void MainWindow::onWsCliRecvBinaryMsg(const QByteArray &message)
         int fps = JsonUtil::getInt(object, Constant::KEY_FPS, 15);
         bool isOnlyFile = JsonUtil::getBool(object, Constant::KEY_IS_ONLY_FILE, false);
         bool isOnlyRelay = JsonUtil::getBool(object, Constant::KEY_ONLY_RELAY, false);
-        
+
         // 检查是否包含控制端最大显示区域信息（自适应分辨率）
-        int controlMaxWidth = -1;  // 默认值-1表示不使用自适应分辨率
+        int controlMaxWidth = -1; // 默认值-1表示不使用自适应分辨率
         int controlMaxHeight = -1;
-        
-        if (object.contains("control_max_width") && object.contains("control_max_height")) {
+
+        if (object.contains("control_max_width") && object.contains("control_max_height"))
+        {
             controlMaxWidth = JsonUtil::getInt(object, "control_max_width", 1920);
             controlMaxHeight = JsonUtil::getInt(object, "control_max_height", 1080);
-            LOG_INFO("Received connection request with adaptive resolution - control max display area: {}x{}", 
+            LOG_INFO("Received connection request with adaptive resolution - control max display area: {}x{}",
                      controlMaxWidth, controlMaxHeight);
-        } else {
+        }
+        else
+        {
             LOG_INFO("Received connection request without adaptive resolution - will use original resolution");
         }
 
@@ -305,20 +300,9 @@ void MainWindow::onWsCliRecvBinaryMsg(const QByteArray &message)
                     if (m_rtc_cli)
                     {
                         delete m_rtc_cli;
-                        LOG_INFO("WebRtcCli for {} destroyed", senderName);
+                        LOG_INFO("{} destroyed", senderName);
                     }
-                    if (m_rtc_cli_thread)
-                    {
-                        m_rtc_cli_thread->quit();
-                        if (!m_rtc_cli_thread->wait(3000))
-                        {
-                            LOG_WARN("WebRtcCli thread {} did not quit gracefully, terminating", senderName);
-                            m_rtc_cli_thread->terminate();
-                            m_rtc_cli_thread->wait(1000);
-                        }
-                        delete m_rtc_cli_thread;
-                    }
-                    LOG_INFO("WebRtcCli thread for {} destroyed", senderName); });
+                    STOP_PTR_THREAD(m_rtc_cli_thread); });
         m_rtc_cli->moveToThread(m_rtc_cli_thread);
         m_rtc_cli_thread->start();
         QMetaObject::invokeMethod(m_rtc_cli, "init", Qt::QueuedConnection);
