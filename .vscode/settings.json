@@ -125,6 +125,7 @@
         "qiodevice": "cpp",
         "qstyle": "cpp",
         "qtablewidgetitem": "cpp",
-        "qpixmap": "cpp"
+        "qpixmap": "cpp",
+        "qoperatingsystemversion": "cpp"
     }
 }

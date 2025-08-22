@@ -37,7 +37,7 @@ public:
     uint16_t ice_port;
     QString ice_username;
     QString ice_password;
-    QString logLevel;
+    spdlog::level::level_enum logLevel;
 private:
     //本机访问密码
     QString local_pwd;

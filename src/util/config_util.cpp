@@ -9,14 +9,12 @@ ConfigUtilData::ConfigUtilData(QObject *parent)
     m_configIni = new QSettings(filePath, QSettings::IniFormat);
     m_configIni->setIniCodec("UTF-8");
 
-    QString localSN = getOrCreateUuid();
-    QByteArray md5 = QCryptographicHash::hash(localSN.toLocal8Bit(), QCryptographicHash::Md5);
-    local_id = QString::fromLocal8Bit(md5.toHex().toUpper());
+    local_id= getOrCreateUuid();
 
     m_configIni->beginGroup("local");
     local_pwd = m_configIni->value("local_pwd", "").toString();
     showUI = m_configIni->value("showUI", true).toBool();
-    logLevel = m_configIni->value("logLevel", "info").toString();
+    QString logLevelTmp = m_configIni->value("logLevel", "info").toString();
     m_configIni->endGroup();
 
     m_configIni->beginGroup("remote");
@@ -42,6 +40,35 @@ ConfigUtilData::ConfigUtilData(QObject *parent)
     {
         local_pwd = QUuid::createUuid().toString(QUuid::WithoutBraces).toUpper();
     }
+    
+    if (logLevelTmp == "trace")
+    {
+        logLevel = spdlog::level::trace;
+    }
+    else if (logLevelTmp == "debug")
+    {
+        logLevel = spdlog::level::debug;
+    }
+    else if (logLevelTmp == "info")
+    {
+        logLevel = spdlog::level::info;
+    }
+    else if (logLevelTmp == "warn")
+    {
+        logLevel = spdlog::level::warn;
+    }
+    else if (logLevelTmp == "error")
+    {
+        logLevel = spdlog::level::err;
+    }
+    else if (logLevelTmp == "critical")
+    {
+        logLevel = spdlog::level::critical;
+    }
+    else
+    {
+        logLevel = spdlog::level::info; // 默认级别
+    }
 
     setLocalPwd(local_pwd);
 
@@ -66,7 +93,7 @@ QString ConfigUtilData::getOrCreateUuid() {
 
     // 尝试读取存储的UUID
     QString uuidKey = "Global/Uuid";
-    QString storedUuid = settings.value(uuidKey).toString();
+    QString storedUuid = settings.value(uuidKey).toString().toUpper();
     
     // 检查UUID是否有效（非空且符合格式）
     QUuid uuid(storedUuid);
@@ -76,7 +103,7 @@ QString ConfigUtilData::getOrCreateUuid() {
 
     // 生成新的UUID并存储
     QUuid newUuid = QUuid::createUuid();
-    QString newUuidStr = newUuid.toString(QUuid::WithoutBraces); // 移除花括号
+    QString newUuidStr = newUuid.toString(QUuid::WithoutBraces).toUpper(); // 移除花括号
     settings.setValue(uuidKey, newUuidStr);
     settings.sync();  // 强制写入磁盘
     return newUuidStr;

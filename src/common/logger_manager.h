@@ -4,11 +4,11 @@
 #include <memory>
 #include <string>
 #include <QString>
-#include "convert.h"
 #include <spdlog/spdlog.h>
 #include <spdlog/sinks/basic_file_sink.h>
 #include <spdlog/sinks/stdout_color_sinks.h>
-#include <spdlog/sinks/rotating_file_sink.h>
+#include <spdlog/sinks/daily_file_sink.h>
+#include "convert.h"
 
 // 为QString添加fmt格式化器支持
 #include <fmt/format.h>
@@ -114,12 +114,13 @@ private:
     LoggerManager& operator=(const LoggerManager&) = delete;
     
     // 私有帮助方法
-    spdlog::level::level_enum getLogLevel() const;
     void setLogLevel(std::shared_ptr<spdlog::logger> logger) const;
     void setLogLevel(std::shared_ptr<spdlog::sinks::sink> sink) const;
     
     std::shared_ptr<spdlog::logger> m_logger;
     bool m_initialized = false;
+    std::shared_ptr<spdlog::sinks::stdout_color_sink_mt> console_sink;
+    std::shared_ptr<spdlog::sinks::daily_file_sink_mt> file_sink;
 };
 
 #define LOG_GENERIC(LOGGER_PTR, LEVEL, FMT, ...) \
