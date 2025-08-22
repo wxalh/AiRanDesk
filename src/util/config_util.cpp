@@ -9,12 +9,12 @@ ConfigUtilData::ConfigUtilData(QObject *parent)
     m_configIni = new QSettings(filePath, QSettings::IniFormat);
     m_configIni->setIniCodec("UTF-8");
 
-    local_id= getOrCreateUuid();
+    local_id = getOrCreateUuid();
 
     m_configIni->beginGroup("local");
     local_pwd = m_configIni->value("local_pwd", "").toString();
     showUI = m_configIni->value("showUI", true).toBool();
-    QString logLevelTmp = m_configIni->value("logLevel", "info").toString();
+    logLevelStr = m_configIni->value("logLevel", "info").toString();
     m_configIni->endGroup();
 
     m_configIni->beginGroup("remote");
@@ -40,28 +40,28 @@ ConfigUtilData::ConfigUtilData(QObject *parent)
     {
         local_pwd = QUuid::createUuid().toString(QUuid::WithoutBraces).toUpper();
     }
-    
-    if (logLevelTmp == "trace")
+
+    if (logLevelStr == "trace")
     {
         logLevel = spdlog::level::trace;
     }
-    else if (logLevelTmp == "debug")
+    else if (logLevelStr == "debug")
     {
         logLevel = spdlog::level::debug;
     }
-    else if (logLevelTmp == "info")
+    else if (logLevelStr == "info")
     {
         logLevel = spdlog::level::info;
     }
-    else if (logLevelTmp == "warn")
+    else if (logLevelStr == "warn")
     {
         logLevel = spdlog::level::warn;
     }
-    else if (logLevelTmp == "error")
+    else if (logLevelStr == "error")
     {
         logLevel = spdlog::level::err;
     }
-    else if (logLevelTmp == "critical")
+    else if (logLevelStr == "critical")
     {
         logLevel = spdlog::level::critical;
     }
@@ -85,19 +85,21 @@ ConfigUtilData *ConfigUtilData::getInstance()
     return &configUtil;
 }
 
-QString ConfigUtilData::getOrCreateUuid() {
+QString ConfigUtilData::getOrCreateUuid()
+{
     // 设置组织名和应用名（确定存储路径）
     QCoreApplication::setOrganizationName("wxalh.com");
     QCoreApplication::setApplicationName("airan");
-    QSettings settings;  // 自动选择系统默认位置
+    QSettings settings; // 自动选择系统默认位置
 
     // 尝试读取存储的UUID
     QString uuidKey = "Global/Uuid";
     QString storedUuid = settings.value(uuidKey).toString().toUpper();
-    
+
     // 检查UUID是否有效（非空且符合格式）
     QUuid uuid(storedUuid);
-    if (!storedUuid.isEmpty() && !uuid.isNull()) {
+    if (!storedUuid.isEmpty() && !uuid.isNull())
+    {
         return storedUuid;
     }
 
@@ -105,7 +107,7 @@ QString ConfigUtilData::getOrCreateUuid() {
     QUuid newUuid = QUuid::createUuid();
     QString newUuidStr = newUuid.toString(QUuid::WithoutBraces).toUpper(); // 移除花括号
     settings.setValue(uuidKey, newUuidStr);
-    settings.sync();  // 强制写入磁盘
+    settings.sync(); // 强制写入磁盘
     return newUuidStr;
 }
 
@@ -113,7 +115,7 @@ void ConfigUtilData::saveIni()
 {
     m_configIni->beginGroup("local");
     m_configIni->setValue("showUI", showUI);
-    m_configIni->setValue("logLevel", logLevel);
+    m_configIni->setValue("logLevel", logLevelStr);
     m_configIni->setValue("local_id", local_id);
     m_configIni->setValue("local_pwd", local_pwd);
     m_configIni->endGroup();

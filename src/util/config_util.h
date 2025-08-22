@@ -38,6 +38,7 @@ public:
     QString ice_username;
     QString ice_password;
     spdlog::level::level_enum logLevel;
+    QString logLevelStr;
 private:
     //本机访问密码
     QString local_pwd;
