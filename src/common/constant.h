@@ -13,6 +13,14 @@
         obj_ptr = nullptr;       \
     }
 
+#define DELETELATER_PTR_FUNC(obj_ptr) \
+    if (obj_ptr)                      \
+    {                                 \
+        obj_ptr->disconnect();        \
+        obj_ptr->deleteLater();       \
+        obj_ptr = nullptr;            \
+    }
+
 #define STOP_OBJ_THREAD(thread)                                                               \
     if (thread.isRunning())                                                                   \
     {                                                                                         \

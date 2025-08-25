@@ -20,10 +20,19 @@ public:
 private:
     quint64 m_heart_interval_ms;
     QTimer m_heart_timer;
+    QTimer m_reconnect_timer;
     QWebSocket *m_ws;
     QUrl m_url;
     bool m_connected;
     bool autoConnect;
+    
+    // 重连机制相关
+    int m_reconnect_phase;  // 0: 1秒重试, 1: 10秒重试, 2: 30秒重试, 3: 60秒重试
+    int m_reconnect_count;  // 当前阶段重试次数
+    static const int MAX_RETRY_PER_PHASE = 10;  // 每个阶段最大重试次数
+    
+    void startReconnectTimer();
+    void scheduleReconnect();
 signals:
     void startHeartTimer(int msec);
     void wsClose(QWebSocketProtocol::CloseCode closeCode = QWebSocketProtocol::CloseCodeNormal, const QString &reason = QString());
@@ -46,8 +55,8 @@ public slots:
     void onWsProxyAuthenticationRequired(const QNetworkProxy &proxy, QAuthenticator *authenticator);
     void onWsSslErrors(const QList<QSslError> &errors);
 
-
     void reConnect();
+    void attemptReconnect();  // 智能重连尝试
     void sendWsCliTextMsg(const QString &msg);
     void sendWsCliBinaryMsg(const QByteArray &msg);
     void sendHeartMsg();

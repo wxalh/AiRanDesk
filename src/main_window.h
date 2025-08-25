@@ -27,7 +27,6 @@ public:
     void connDesktopMgr(const QString &remote_id,const QString &remote_pwd_md5);
 signals:
     void closeWsCli();
-    void reConnectWsCli();
     void initWsCli(const QString &url,quint64 heart_interval_ms);
     void sendWsCliTextMsg(const QString &message);
     void sendWsCliBinaryMsg(const QByteArray &message);
