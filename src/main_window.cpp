@@ -45,6 +45,7 @@ void MainWindow::initCli()
     // 连接websocket相关信号
     connect(&m_ws, &WsCli::onWsCliConnected, this, &MainWindow::onWsCliConnected);
     connect(&m_ws, &WsCli::onWsCliDisconnected, this, &MainWindow::onWsCliDisconnected);
+    connect(&m_ws, &WsCli::onReconnectStatusUpdate, this, &MainWindow::onWsCliReconnectStatus);
     connect(&m_ws, &WsCli::onWsCliRecvBinaryMsg, this, &MainWindow::onWsCliRecvBinaryMsg);
     connect(&m_ws, &WsCli::onWsCliRecvTextMsg, this, &MainWindow::onWsCliRecvTextMsg);
     connect(this, &MainWindow::initWsCli, &m_ws, &WsCli::init);
@@ -156,6 +157,23 @@ void MainWindow::onWsCliDisconnected()
     LOG_WARN("WebSocket disconnected, auto-reconnect will be handled by WsCli");
     ui->ws_connect_status->setText("服务器断开连接，正在重连...");
     // 移除手动重连调用，让 WsCli 内部处理
+}
+
+void MainWindow::onWsCliReconnectStatus(const QString &status, int phase, int attempt, int nextDelaySeconds)
+{
+    QString displayStatus;
+    if (status == "连接已恢复") {
+        displayStatus = "服务器已连接";
+    } else if (nextDelaySeconds > 0) {
+        displayStatus = QString("服务器断开连接，%1").arg(status);
+    } else {
+        displayStatus = QString("服务器断开连接，%1").arg(status);
+    }
+    
+    ui->ws_connect_status->setText(displayStatus);
+    
+    LOG_INFO("Reconnect status update - Phase: {}, Attempt: {}, Status: {}", 
+             phase, attempt, status);
 }
 
 void MainWindow::onWsCliRecvTextMsg(const QString &message)
@@ -295,28 +313,18 @@ void MainWindow::onWsCliRecvBinaryMsg(const QByteArray &message)
         connect(&m_ws, &WsCli::onWsCliRecvTextMsg, m_rtc_cli, &WebRtcCli::onWsCliRecvTextMsg);
         connect(m_rtc_cli, &WebRtcCli::sendWsCliBinaryMsg, &m_ws, &WsCli::sendWsCliBinaryMsg);
         connect(m_rtc_cli, &WebRtcCli::sendWsCliTextMsg, &m_ws, &WsCli::sendWsCliTextMsg);
-        
+
         // 使用 QPointer 安全管理指针，避免 WebSocket 断开连接
         connect(m_rtc_cli, &WebRtcCli::destroyCli, this, [senderName, m_rtc_cli, m_rtc_cli_thread]()
                 {
-                    LOG_INFO("Starting cleanup for {}", senderName);
-                    
+                    // 安全停止线程
+                    STOP_PTR_THREAD(m_rtc_cli_thread);
+                    LOG_INFO("Starting destroyCli for {}", senderName);
                     // 先断开与 WebSocket 的连接，防止影响主连接
-                    if (m_rtc_cli)
-                    {
+                    if(m_rtc_cli){
                         m_rtc_cli->disconnect();
                         m_rtc_cli->deleteLater();
                         LOG_INFO("{} scheduled for deletion", senderName);
-                    }
-                    
-                    // 安全停止线程
-                    if (m_rtc_cli_thread)
-                    {
-                        QMetaObject::invokeMethod(m_rtc_cli_thread, [m_rtc_cli_thread, senderName]() {
-                            STOP_PTR_THREAD(m_rtc_cli_thread);
-                            m_rtc_cli_thread->deleteLater();
-                            LOG_INFO("{} thread cleanup completed", senderName);
-                        }, Qt::QueuedConnection);
                     }
                 }, Qt::QueuedConnection);
         m_rtc_cli->moveToThread(m_rtc_cli_thread);

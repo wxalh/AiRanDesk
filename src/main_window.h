@@ -42,6 +42,8 @@ private slots:
     void onWsCliConnected();
     //websocket断开连接
     void onWsCliDisconnected();
+    //websocket重连状态更新
+    void onWsCliReconnectStatus(const QString &status, int phase, int attempt, int nextDelaySeconds);
     //websocket接收到文本消息
     void onWsCliRecvTextMsg(const QString &message);
     //websocket接收到二进制消息

@@ -31,10 +31,13 @@ private:
     int m_reconnect_count;  // 当前阶段重试次数
     static const int MAX_RETRY_PER_PHASE = 10;  // 每个阶段最大重试次数
     
-    void startReconnectTimer();
     void scheduleReconnect();
 signals:
+    void startReconnectTimer(int msec);
+    void stopReconnectTimer();
+    // 心跳定时器信号
     void startHeartTimer(int msec);
+    void stopHeartTimer();
     void wsClose(QWebSocketProtocol::CloseCode closeCode = QWebSocketProtocol::CloseCodeNormal, const QString &reason = QString());
     void wsOpen(const QUrl &url);
     void wsPing(const QByteArray &payload = QByteArray());
@@ -42,6 +45,8 @@ signals:
     void onWsCliConnected();
     void onWsCliRecvTextMsg(const QString &message);
     void onWsCliRecvBinaryMsg(const QByteArray &message);
+    // 重连状态更新信号
+    void onReconnectStatusUpdate(const QString &status, int phase, int attempt, int nextDelaySeconds);
 public slots:
     void init(const QString &url,quint64 heart_interval_ms);
     void onWsConnected();
