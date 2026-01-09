@@ -1,0 +1,73 @@
+{
+  "version": 3,
+  "cmakeMinimumRequired": {
+    "major": 3,
+    "minor": 16
+  },
+  "configurePresets": [
+    {
+      "name": "x64-windows-msvc",
+      "displayName": "x64-windows-msvc",
+      "generator": "Visual Studio 17 2022",
+      "architecture": "x64",
+      "toolset": "host=x64",
+      "cacheVariables": {
+        "QT5_DIR": "C:/Qt/5.15.16/msvc2019_x64",
+        "OPENSSL_ROOT_DIR": "C:/Program Files/OpenSSL-Win64",
+        "FFMPEG_ROOT_DIR": "${sourceDir}/../ffmpeg/ffmpeg-n7.1-241205-gpl-amd64-shared"
+      }
+    },
+    {
+      "name": "x86-windows-msvc",
+      "displayName": "x86-windows-msvc",
+      "generator": "Visual Studio 17 2022",
+      "architecture": "win32",
+      "toolset": "host=x86",
+      "cacheVariables": {
+        "QT5_DIR": "C:/Qt/5.15.16/msvc2019_x86",
+        "OPENSSL_ROOT_DIR": "C:/Program Files (x86)/OpenSSL-Win32",
+        "FFMPEG_ROOT_DIR": "${sourceDir}/../ffmpeg/ffmpeg-n7.1-241205-gpl-x86-shared"
+      }
+    },
+    {
+      "name": "x64-linux",
+      "displayName": "x64-linux",
+      "generator": "Ninja"
+    },
+    {
+      "name": "arm-linux",
+      "displayName": "arm-linux (ARMv7)",
+      "generator": "Unix Makefiles",
+      "binaryDir": "${sourceDir}/out/build/arm-linux",
+      "cacheVariables": {
+        "QT5_DIR": "/opt/Qt/5.15.14_armhf",
+        "CMAKE_PREFIX_PATH": "/opt/Qt/5.15.14_armhf",
+        "CMAKE_C_COMPILER": "gcc",
+        "CMAKE_CXX_COMPILER": "g++"
+      }
+    }
+
+  ],
+  "buildPresets": [
+    {
+      "name": "x64-windows-msvc",
+      "configurePreset": "x64-windows-msvc",
+      "configuration": "Release"
+    },
+    {
+      "name": "x86-windows-msvc",
+      "configurePreset": "x86-windows-msvc",
+      "configuration": "Release"
+    },
+    {
+      "name": "x64-linux",
+      "configurePreset": "x64-linux",
+      "configuration": "Release"
+    },
+    {
+      "name": "arm-linux",
+      "configurePreset": "arm-linux",
+      "configuration": "Release"
+    }
+  ]
+}

@@ -1,0 +1,632 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<ui version="4.0">
+ <class>MainWindow</class>
+ <widget class="QWidget" name="MainWindow">
+  <property name="geometry">
+   <rect>
+    <x>0</x>
+    <y>0</y>
+    <width>800</width>
+    <height>600</height>
+   </rect>
+  </property>
+  <property name="windowTitle">
+   <string>MainWindow</string>
+  </property>
+  <property name="styleSheet">
+   <string notr="true"/>
+  </property>
+  <widget class="QWidget" name="centralwidget" native="true">
+   <property name="geometry">
+    <rect>
+     <x>0</x>
+     <y>0</y>
+     <width>800</width>
+     <height>600</height>
+    </rect>
+   </property>
+   <property name="styleSheet">
+    <string notr="true">background-color: #181818;
+color: rgb(131,193,224);</string>
+   </property>
+   <widget class="QLabel" name="allow_control_label">
+    <property name="geometry">
+     <rect>
+      <x>40</x>
+      <y>50</y>
+      <width>131</width>
+      <height>31</height>
+     </rect>
+    </property>
+    <property name="font">
+     <font>
+      <pointsize>13</pointsize>
+     </font>
+    </property>
+    <property name="styleSheet">
+     <string notr="true"/>
+    </property>
+    <property name="text">
+     <string>允许控制本设备</string>
+    </property>
+    <property name="alignment">
+     <set>Qt::AlignLeading|Qt::AlignLeft|Qt::AlignVCenter</set>
+    </property>
+   </widget>
+   <widget class="QLabel" name="local_id_label">
+    <property name="geometry">
+     <rect>
+      <x>40</x>
+      <y>125</y>
+      <width>61</width>
+      <height>16</height>
+     </rect>
+    </property>
+    <property name="styleSheet">
+     <string notr="true">color: rgb(106,106,106);</string>
+    </property>
+    <property name="text">
+     <string>本机识别码</string>
+    </property>
+   </widget>
+   <widget class="QLineEdit" name="local_id">
+    <property name="enabled">
+     <bool>true</bool>
+    </property>
+    <property name="geometry">
+     <rect>
+      <x>136</x>
+      <y>119</y>
+      <width>501</width>
+      <height>30</height>
+     </rect>
+    </property>
+    <property name="font">
+     <font>
+      <pointsize>15</pointsize>
+     </font>
+    </property>
+    <property name="focusPolicy">
+     <enum>Qt::StrongFocus</enum>
+    </property>
+    <property name="styleSheet">
+     <string notr="true">border: 0px;</string>
+    </property>
+    <property name="text">
+     <string>49D59A95-DF6D-48EA-B77A-145E99E1F0C9</string>
+    </property>
+   </widget>
+   <widget class="QLabel" name="local_pwd_label">
+    <property name="geometry">
+     <rect>
+      <x>40</x>
+      <y>199</y>
+      <width>71</width>
+      <height>16</height>
+     </rect>
+    </property>
+    <property name="styleSheet">
+     <string notr="true">color: rgb(106,106,106);</string>
+    </property>
+    <property name="text">
+     <string>本机验证码</string>
+    </property>
+   </widget>
+   <widget class="QLabel" name="remote_control_label">
+    <property name="geometry">
+     <rect>
+      <x>40</x>
+      <y>290</y>
+      <width>131</width>
+      <height>31</height>
+     </rect>
+    </property>
+    <property name="font">
+     <font>
+      <pointsize>13</pointsize>
+     </font>
+    </property>
+    <property name="styleSheet">
+     <string notr="true"/>
+    </property>
+    <property name="text">
+     <string>远程控制设备</string>
+    </property>
+    <property name="alignment">
+     <set>Qt::AlignLeading|Qt::AlignLeft|Qt::AlignVCenter</set>
+    </property>
+   </widget>
+   <widget class="QCheckBox" name="adaptive_resolution">
+    <property name="geometry">
+     <rect>
+      <x>140</x>
+      <y>480</y>
+      <width>121</width>
+      <height>20</height>
+     </rect>
+    </property>
+    <property name="font">
+     <font>
+      <pointsize>11</pointsize>
+     </font>
+    </property>
+    <property name="text">
+     <string>自适应分辨率</string>
+    </property>
+    <property name="checked">
+     <bool>false</bool>
+    </property>
+   </widget>
+   <widget class="QPushButton" name="btn_conn">
+    <property name="geometry">
+     <rect>
+      <x>670</x>
+      <y>411</y>
+      <width>70</width>
+      <height>40</height>
+     </rect>
+    </property>
+    <property name="font">
+     <font>
+      <pointsize>-1</pointsize>
+     </font>
+    </property>
+    <property name="styleSheet">
+     <string notr="true">/* 正常状态 */
+        QPushButton {
+            background-color: #783041;
+            border: 2px solid #858585;
+            border-radius: 10px;
+            padding: 5px;
+            font-size: 14px;
+        }
+
+        /* 鼠标悬停状态 */
+        QPushButton:hover {
+            background-color: #e0e0e0;
+            color: #888888;
+        }
+
+        /* 按钮按下状态 */
+        QPushButton:pressed {
+            background-color: #d0d0d0;
+            border: 2px solid #666666;
+            /* 通过调整内边距来模拟按下效果 */
+            padding-top: 6px;
+            padding-bottom: 4px;
+            color: #888888;
+        }
+
+        /* 按钮禁用状态 */
+        QPushButton:disabled {
+            background-color: #f0f0f0;
+            border: 2px solid #aaaaaa;
+            color: #888888;
+        }</string>
+    </property>
+    <property name="text">
+     <string>连接</string>
+    </property>
+   </widget>
+   <widget class="QRadioButton" name="remote_desktop">
+    <property name="geometry">
+     <rect>
+      <x>195</x>
+      <y>297</y>
+      <width>95</width>
+      <height>19</height>
+     </rect>
+    </property>
+    <property name="font">
+     <font>
+      <pointsize>11</pointsize>
+     </font>
+    </property>
+    <property name="text">
+     <string>远程桌面</string>
+    </property>
+    <property name="checked">
+     <bool>true</bool>
+    </property>
+   </widget>
+   <widget class="QRadioButton" name="remote_file">
+    <property name="geometry">
+     <rect>
+      <x>295</x>
+      <y>297</y>
+      <width>95</width>
+      <height>19</height>
+     </rect>
+    </property>
+    <property name="font">
+     <font>
+      <pointsize>11</pointsize>
+     </font>
+    </property>
+    <property name="text">
+     <string>文件传输</string>
+    </property>
+   </widget>
+   <widget class="QLineEdit" name="local_id_border">
+    <property name="enabled">
+     <bool>false</bool>
+    </property>
+    <property name="geometry">
+     <rect>
+      <x>130</x>
+      <y>110</y>
+      <width>521</width>
+      <height>45</height>
+     </rect>
+    </property>
+    <property name="focusPolicy">
+     <enum>Qt::NoFocus</enum>
+    </property>
+    <property name="styleSheet">
+     <string notr="true">border: 2px solid #858585;
+border-radius: 10px; 
+padding: 0 8px; 
+</string>
+    </property>
+   </widget>
+   <widget class="QLineEdit" name="local_pwd">
+    <property name="enabled">
+     <bool>true</bool>
+    </property>
+    <property name="geometry">
+     <rect>
+      <x>136</x>
+      <y>194</y>
+      <width>501</width>
+      <height>30</height>
+     </rect>
+    </property>
+    <property name="font">
+     <font>
+      <pointsize>15</pointsize>
+     </font>
+    </property>
+    <property name="focusPolicy">
+     <enum>Qt::StrongFocus</enum>
+    </property>
+    <property name="styleSheet">
+     <string notr="true">border: 0px;</string>
+    </property>
+    <property name="text">
+     <string>49D59A95-DF6D-48EA-B77A-145E99E1F0C9</string>
+    </property>
+   </widget>
+   <widget class="QLineEdit" name="local_pwd_border">
+    <property name="enabled">
+     <bool>false</bool>
+    </property>
+    <property name="geometry">
+     <rect>
+      <x>130</x>
+      <y>185</y>
+      <width>521</width>
+      <height>45</height>
+     </rect>
+    </property>
+    <property name="focusPolicy">
+     <enum>Qt::NoFocus</enum>
+    </property>
+    <property name="styleSheet">
+     <string notr="true">border: 2px solid #858585;
+border-radius: 10px; 
+padding: 0 8px; 
+</string>
+    </property>
+   </widget>
+   <widget class="QLineEdit" name="remote_pwd_border">
+    <property name="enabled">
+     <bool>false</bool>
+    </property>
+    <property name="geometry">
+     <rect>
+      <x>130</x>
+      <y>410</y>
+      <width>521</width>
+      <height>45</height>
+     </rect>
+    </property>
+    <property name="focusPolicy">
+     <enum>Qt::NoFocus</enum>
+    </property>
+    <property name="styleSheet">
+     <string notr="true">border: 2px solid #858585;
+border-radius: 10px; 
+padding: 0 8px; 
+</string>
+    </property>
+   </widget>
+   <widget class="QLineEdit" name="remote_pwd">
+    <property name="enabled">
+     <bool>true</bool>
+    </property>
+    <property name="geometry">
+     <rect>
+      <x>136</x>
+      <y>419</y>
+      <width>500</width>
+      <height>30</height>
+     </rect>
+    </property>
+    <property name="font">
+     <font>
+      <pointsize>15</pointsize>
+     </font>
+    </property>
+    <property name="focusPolicy">
+     <enum>Qt::StrongFocus</enum>
+    </property>
+    <property name="styleSheet">
+     <string notr="true">border: 0px;</string>
+    </property>
+    <property name="text">
+     <string/>
+    </property>
+    <property name="clearButtonEnabled">
+     <bool>true</bool>
+    </property>
+   </widget>
+   <widget class="QLineEdit" name="remote_id">
+    <property name="enabled">
+     <bool>true</bool>
+    </property>
+    <property name="geometry">
+     <rect>
+      <x>136</x>
+      <y>344</y>
+      <width>500</width>
+      <height>30</height>
+     </rect>
+    </property>
+    <property name="font">
+     <font>
+      <pointsize>15</pointsize>
+     </font>
+    </property>
+    <property name="focusPolicy">
+     <enum>Qt::StrongFocus</enum>
+    </property>
+    <property name="styleSheet">
+     <string notr="true">border: 0px;</string>
+    </property>
+    <property name="text">
+     <string/>
+    </property>
+    <property name="clearButtonEnabled">
+     <bool>true</bool>
+    </property>
+   </widget>
+   <widget class="QLabel" name="remote_id_label">
+    <property name="geometry">
+     <rect>
+      <x>40</x>
+      <y>350</y>
+      <width>61</width>
+      <height>16</height>
+     </rect>
+    </property>
+    <property name="styleSheet">
+     <string notr="true">color: rgb(106,106,106);</string>
+    </property>
+    <property name="text">
+     <string>远端识别码</string>
+    </property>
+   </widget>
+   <widget class="QLineEdit" name="remote_id_border">
+    <property name="enabled">
+     <bool>false</bool>
+    </property>
+    <property name="geometry">
+     <rect>
+      <x>130</x>
+      <y>335</y>
+      <width>521</width>
+      <height>45</height>
+     </rect>
+    </property>
+    <property name="focusPolicy">
+     <enum>Qt::NoFocus</enum>
+    </property>
+    <property name="styleSheet">
+     <string notr="true">border: 2px solid #858585;
+border-radius: 10px; 
+padding: 0 8px; 
+</string>
+    </property>
+   </widget>
+   <widget class="QLabel" name="remote_pwd_label">
+    <property name="geometry">
+     <rect>
+      <x>40</x>
+      <y>424</y>
+      <width>71</width>
+      <height>16</height>
+     </rect>
+    </property>
+    <property name="styleSheet">
+     <string notr="true">color: rgb(106,106,106);</string>
+    </property>
+    <property name="text">
+     <string>远端验证码</string>
+    </property>
+   </widget>
+   <widget class="QPushButton" name="local_pwd_change">
+    <property name="geometry">
+     <rect>
+      <x>670</x>
+      <y>200</y>
+      <width>51</width>
+      <height>31</height>
+     </rect>
+    </property>
+    <property name="font">
+     <font>
+      <pointsize>-1</pointsize>
+     </font>
+    </property>
+    <property name="styleSheet">
+     <string notr="true">/* 正常状态 */
+        QPushButton {
+            background-color: #783041;
+            border: 2px solid #858585;
+            border-radius: 10px;
+            padding: 5px;
+            font-size: 14px;
+        }
+
+        /* 鼠标悬停状态 */
+        QPushButton:hover {
+            background-color: #e0e0e0;
+            color: #888888;
+        }
+
+        /* 按钮按下状态 */
+        QPushButton:pressed {
+            background-color: #d0d0d0;
+            border: 2px solid #666666;
+            /* 通过调整内边距来模拟按下效果 */
+            padding-top: 6px;
+            padding-bottom: 4px;
+            color: #888888;
+        }
+
+        /* 按钮禁用状态 */
+        QPushButton:disabled {
+            background-color: #f0f0f0;
+            border: 2px solid #aaaaaa;
+            color: #888888;
+        }</string>
+    </property>
+    <property name="text">
+     <string>更新</string>
+    </property>
+   </widget>
+   <widget class="QPushButton" name="local_share">
+    <property name="geometry">
+     <rect>
+      <x>670</x>
+      <y>120</y>
+      <width>51</width>
+      <height>31</height>
+     </rect>
+    </property>
+    <property name="font">
+     <font>
+      <pointsize>-1</pointsize>
+     </font>
+    </property>
+    <property name="styleSheet">
+     <string notr="true">/* 正常状态 */
+        QPushButton {
+            background-color: #783041;
+            border: 2px solid #858585;
+            border-radius: 10px;
+            padding: 5px;
+            font-size: 14px;
+        }
+
+        /* 鼠标悬停状态 */
+        QPushButton:hover {
+            background-color: #e0e0e0;
+            color: #888888;
+        }
+
+        /* 按钮按下状态 */
+        QPushButton:pressed {
+            background-color: #d0d0d0;
+            border: 2px solid #666666;
+            /* 通过调整内边距来模拟按下效果 */
+            padding-top: 6px;
+            padding-bottom: 4px;
+            color: #888888;
+        }
+
+        /* 按钮禁用状态 */
+        QPushButton:disabled {
+            background-color: #f0f0f0;
+            border: 2px solid #aaaaaa;
+            color: #888888;
+        }</string>
+    </property>
+    <property name="text">
+     <string>分享</string>
+    </property>
+   </widget>
+   <widget class="QLabel" name="ws_connect_status">
+    <property name="geometry">
+     <rect>
+      <x>20</x>
+      <y>570</y>
+      <width>281</width>
+      <height>16</height>
+     </rect>
+    </property>
+    <property name="text">
+     <string>正在连接服务器...</string>
+    </property>
+   </widget>
+   <widget class="QCheckBox" name="only_relay">
+    <property name="geometry">
+     <rect>
+      <x>280</x>
+      <y>480</y>
+      <width>121</width>
+      <height>20</height>
+     </rect>
+    </property>
+    <property name="font">
+     <font>
+      <pointsize>11</pointsize>
+     </font>
+    </property>
+    <property name="text">
+     <string>仅服务器中继</string>
+    </property>
+    <property name="checked">
+     <bool>false</bool>
+    </property>
+   </widget>
+   <zorder>adaptive_resolution</zorder>
+   <zorder>local_pwd_border</zorder>
+   <zorder>local_id_border</zorder>
+   <zorder>allow_control_label</zorder>
+   <zorder>local_id_label</zorder>
+   <zorder>local_id</zorder>
+   <zorder>local_pwd_label</zorder>
+   <zorder>remote_control_label</zorder>
+   <zorder>btn_conn</zorder>
+   <zorder>remote_desktop</zorder>
+   <zorder>remote_file</zorder>
+   <zorder>local_pwd</zorder>
+   <zorder>remote_pwd_border</zorder>
+   <zorder>remote_id_label</zorder>
+   <zorder>remote_id_border</zorder>
+   <zorder>remote_pwd_label</zorder>
+   <zorder>remote_pwd</zorder>
+   <zorder>remote_id</zorder>
+   <zorder>local_pwd_change</zorder>
+   <zorder>local_share</zorder>
+   <zorder>ws_connect_status</zorder>
+   <zorder>only_relay</zorder>
+  </widget>
+ </widget>
+ <tabstops>
+  <tabstop>remote_id</tabstop>
+  <tabstop>remote_pwd</tabstop>
+  <tabstop>remote_desktop</tabstop>
+  <tabstop>remote_file</tabstop>
+  <tabstop>adaptive_resolution</tabstop>
+  <tabstop>only_relay</tabstop>
+  <tabstop>btn_conn</tabstop>
+  <tabstop>local_pwd_change</tabstop>
+  <tabstop>local_share</tabstop>
+  <tabstop>local_pwd</tabstop>
+  <tabstop>local_id</tabstop>
+ </tabstops>
+ <resources/>
+ <connections/>
+</ui>
