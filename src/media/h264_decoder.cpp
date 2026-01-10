@@ -93,7 +93,6 @@ H264Decoder::H264Decoder(QObject *parent)
     , m_initialized(false)
     , m_waitingForKeyFrame(true)
     , m_consecutiveErrors(0)
-    , m_lastGoodFrameTimestamp(0)
 {
 }
 
@@ -400,25 +399,81 @@ QImage H264Decoder::decodeFrame(const rtc::binary& h264Data)
     m_packet->data = const_cast<uint8_t*>(reinterpret_cast<const uint8_t*>(h264Data.data()));
     m_packet->size = static_cast<int>(h264Data.size());
     
+    // 检查是否是关键帧（包含 SPS/PPS）
+    bool isKeyFrame = false;
+    if (h264Data.size() >= 5) {
+        // 检查 Annex-B 起始码后的 NAL 单元类型
+        for (size_t i = 0; i + 4 < h264Data.size(); ++i) {
+            if (static_cast<uint8_t>(h264Data[i]) == 0x00 &&
+                static_cast<uint8_t>(h264Data[i+1]) == 0x00 &&
+                static_cast<uint8_t>(h264Data[i+2]) == 0x00 &&
+                static_cast<uint8_t>(h264Data[i+3]) == 0x01) {
+                uint8_t nalType = static_cast<uint8_t>(h264Data[i+4]) & 0x1F;
+                // NAL类型：7=SPS, 8=PPS, 5=IDR
+                if (nalType == 7 || nalType == 8 || nalType == 5) {
+                    isKeyFrame = true;
+                    if (m_waitingForKeyFrame) {
+                        LOG_INFO("🔑 Received key frame (NAL type: {}), resuming decoding", nalType);
+                        m_waitingForKeyFrame = false;
+                        m_consecutiveErrors = 0;
+                    }
+                    break;
+                }
+            }
+        }
+    }
+    
+    // 如果正在等待关键帧且当前帧不是关键帧，则跳过
+    if (m_waitingForKeyFrame && !isKeyFrame) {
+        LOG_DEBUG("Skipping non-key frame while waiting for key frame");
+        av_packet_unref(m_packet);
+        return QImage();
+    }
+    
     // 发送数据包到解码器
     int ret = avcodec_send_packet(m_codecContext, m_packet);
     if (ret < 0) {
         char errbuf[AV_ERROR_MAX_STRING_SIZE];
         av_strerror(ret, errbuf, sizeof(errbuf));
         LOG_ERROR("Error sending packet to decoder: {}", errbuf);
+        
+        // 增加错误计数
+        m_consecutiveErrors++;
+        if (m_consecutiveErrors >= 10) {
+            LOG_WARN("⚠️ Too many consecutive errors ({}), requesting key frame", m_consecutiveErrors);
+            m_waitingForKeyFrame = true;
+            avcodec_flush_buffers(m_codecContext);
+        }
+        
+        av_packet_unref(m_packet);
         return QImage();
     }
     
     // 接收解码后的帧
     ret = avcodec_receive_frame(m_codecContext, m_frame);
     if (ret == AVERROR(EAGAIN) || ret == AVERROR_EOF) {
+        av_packet_unref(m_packet);
         return QImage(); // 需要更多数据或结束
     } else if (ret < 0) {
         char errbuf[AV_ERROR_MAX_STRING_SIZE];
         av_strerror(ret, errbuf, sizeof(errbuf));
         LOG_ERROR("Error receiving frame from decoder: {}", errbuf);
+        
+        // 增加错误计数
+        m_consecutiveErrors++;
+        if (m_consecutiveErrors >= 10) {
+            LOG_WARN("⚠️ Too many consecutive decode errors ({}), requesting key frame", m_consecutiveErrors);
+            m_waitingForKeyFrame = true;
+            avcodec_flush_buffers(m_codecContext);
+        }
+        
+        av_packet_unref(m_packet);
+        av_packet_unref(m_packet);
         return QImage();
     }
+    
+    // 成功解码帧，重置错误计数
+    m_consecutiveErrors = 0;
     
     // 如果是硬件帧，需要转换到系统内存
     AVFrame* frameToConvert = m_frame;
@@ -901,4 +956,34 @@ bool H264Decoder::validateHardwareDecoding()
     
     LOG_DEBUG("✓ Hardware decoding validation passed for: {}", m_hwAccelName);
     return true;
+}
+
+void H264Decoder::flushDecoder()
+{
+    QMutexLocker locker(&m_mutex);
+    
+    if (m_codecContext) {
+        avcodec_flush_buffers(m_codecContext);
+        LOG_INFO("Decoder buffers flushed");
+    }
+}
+
+void H264Decoder::resetDecoder()
+{
+    QMutexLocker locker(&m_mutex);
+    
+    m_waitingForKeyFrame = true;
+    m_consecutiveErrors = 0;
+    
+    if (m_codecContext) {
+        avcodec_flush_buffers(m_codecContext);
+    }
+    
+    LOG_INFO("Decoder reset, waiting for key frame");
+}
+
+bool H264Decoder::isWaitingForKeyFrame()
+{
+    QMutexLocker locker(&m_mutex);
+    return m_waitingForKeyFrame;
 }

@@ -930,18 +930,35 @@ void WebRtcCtl::processVideoFrame(const rtc::binary &data, const rtc::FrameInfo 
         // 解码H264数据为QImage
         if (m_h264Decoder)
         {
+            // 检查解码器是否在等待关键帧
+            if (m_h264Decoder->isWaitingForKeyFrame() && !m_waitingForKeyFrame)
+            {
+                LOG_WARN("⚠️ Decoder is waiting for key frame, requesting from encoder");
+                requestKeyFrame();
+                m_waitingForKeyFrame = true;
+            }
+            
             QImage decodedFrame = m_h264Decoder->decodeFrame(data);
             if (!decodedFrame.isNull())
             {
                 // 发射信号显示解码后的图像
                 emit videoFrameDecoded(decodedFrame);
+                m_waitingForKeyFrame = false; // 成功解码，重置等待标志
                 LOG_DEBUG("Successfully decoded video frame: {}x{}", decodedFrame.width(), decodedFrame.height());
             }
             else
             {
-                // 解码失败处理
-                requestKeyFrame();
-                m_waitingForKeyFrame = true;
+                // 解码失败处理 - 只在不是等待更多数据时请求关键帧
+                static int consecutiveFailures = 0;
+                consecutiveFailures++;
+                
+                if (consecutiveFailures >= 5 && !m_waitingForKeyFrame)
+                {
+                    LOG_WARN("⚠️ {} consecutive decode failures, requesting key frame", consecutiveFailures);
+                    requestKeyFrame();
+                    m_waitingForKeyFrame = true;
+                    consecutiveFailures = 0;
+                }
             }
         }
         else

@@ -101,8 +101,39 @@ QStringList H264Encoder::getAvailableHWAccels()
         const AVCodec *codec = avcodec_find_encoder_by_name(codecName.toUtf8().data());
         if (codec)
         {
-            LOG_INFO("Found hardware encoder: {}", codecName);
-            hwAccels << accelNames[i];
+            // 实际测试编码器是否可用（创建上下文并尝试打开）
+            AVCodecContext *testContext = avcodec_alloc_context3(codec);
+            if (testContext)
+            {
+                // 设置最小测试参数
+                testContext->width = 640;
+                testContext->height = 480;
+                testContext->time_base = AVRational{1, 30};
+                testContext->framerate = AVRational{30, 1};
+                testContext->pix_fmt = AV_PIX_FMT_NV12;
+                
+                // 对于QSV，调整分辨率为16的倍数
+                if (QString(accelNames[i]) == "qsv")
+                {
+                    testContext->width = 640;
+                    testContext->height = 480;
+                }
+                
+                int ret = avcodec_open2(testContext, codec, nullptr);
+                if (ret >= 0)
+                {
+                    LOG_INFO("✓ Hardware encoder {} is available and working", codecName);
+                    hwAccels << accelNames[i];
+                    avcodec_free_context(&testContext);
+                }
+                else
+                {
+                    char errbuf[AV_ERROR_MAX_STRING_SIZE];
+                    av_strerror(ret, errbuf, sizeof(errbuf));
+                    LOG_DEBUG("✗ Hardware encoder {} found but cannot be opened: {}", codecName, errbuf);
+                    avcodec_free_context(&testContext);
+                }
+            }
         }
         else
         {
@@ -206,9 +237,9 @@ bool H264Encoder::initializeCodec(const QString &hwAccel)
     m_codecContext->height = m_height;
     m_codecContext->time_base = AVRational{1, m_fps};
     m_codecContext->framerate = AVRational{m_fps, 1};
-    m_codecContext->gop_size = m_fps * 3; // 每3秒一个关键帧
+    m_codecContext->gop_size = m_fps;     // 每1秒一个关键帧（更频繁，避免花屏）
     m_codecContext->max_b_frames = 0;     // 不使用B帧，只使用I帧和P帧
-    m_codecContext->keyint_min = m_fps;   // 最小关键帧间隔1秒
+    m_codecContext->keyint_min = m_fps / 2; // 最小关键帧间隔0.5秒
 
     // 网络自适应优化：针对高延迟网络的编码参数
     m_codecContext->flags |= AV_CODEC_FLAG_LOW_DELAY;
@@ -250,18 +281,19 @@ bool H264Encoder::initializeCodec(const QString &hwAccel)
         }
 
         LOG_INFO("Setting software encoding parameters: {}x{}, {}fps, {}bps", m_width, m_height, m_fps, m_bitrate);
+        
+        // 基础编码选项
         av_opt_set(m_codecContext->priv_data, "preset", "fast", 0);
         av_opt_set(m_codecContext->priv_data, "tune", "zerolatency", 0);
-        av_opt_set(m_codecContext->priv_data, "x264opts", "no-mbtree:sliced-threads:rc-lookahead=10", 0);
+        av_opt_set(m_codecContext->priv_data, "profile", "baseline", 0); // 使用baseline profile提高兼容性
         
-        // 使用Annex-B格式，包含起始码，便于后续SPS/PPS提取
-        av_opt_set(m_codecContext->priv_data, "annex-b", "1", 0);
-        // 兼容名称（部分版本使用 annexb）
-        av_opt_set(m_codecContext->priv_data, "annexb", "1", 0);
-        // 确保每个IDR前重复输出SPS/PPS（libx264）
-        av_opt_set(m_codecContext->priv_data, "x264-params", "nal-hrd=cbr:force-cfr=1:repeat-headers=1", 0);
+        // 构建完整的x264参数字符串，确保Annex-B格式和重复SPS/PPS
+        QString x264Params = QString("keyint=%1:min-keyint=%2:no-scenecut:repeat-headers=1:bframes=0:b-adapt=0")
+                            .arg(m_fps)
+                            .arg(m_fps / 2);
+        av_opt_set(m_codecContext->priv_data, "x264-params", x264Params.toStdString().c_str(), 0);
         
-        LOG_INFO("Software encoder configured for Annex-B and repeat headers on keyframes");
+        LOG_INFO("Software encoder configured with baseline profile, Annex-B format and repeat headers (GOP: {} frames)", m_fps);
     }
     else
     {
@@ -389,8 +421,11 @@ bool H264Encoder::initializeHardwareAccel(const QString &hwAccel)
         av_opt_set(m_codecContext->priv_data, "repeat-headers", "1", 0);
         // 使用Annex-B起始码
         av_opt_set(m_codecContext->priv_data, "annexb", "1", 0);
+        // 设置GOP大小
+        QString gopSize = QString::number(m_fps);
+        av_opt_set(m_codecContext->priv_data, "g", gopSize.toStdString().c_str(), 0);
 
-        LOG_INFO("NVENC encoder configured with Annex-B, forced IDR and repeat headers on keyframes");
+        LOG_INFO("NVENC encoder configured with Annex-B, forced IDR and repeat headers on keyframes (GOP: {} frames)", m_fps);
         return true;
     }
     else if (hwAccel == "amf")
@@ -407,8 +442,10 @@ bool H264Encoder::initializeHardwareAccel(const QString &hwAccel)
         av_opt_set(m_codecContext->priv_data, "repeat-headers", "1", 0);
         // 使用Annex-B起始码（若支持）
         av_opt_set(m_codecContext->priv_data, "annexb", "1", 0);
+        // 设置GOP大小
+        av_opt_set(m_codecContext->priv_data, "gops_per_idr", "1", 0);
 
-        LOG_INFO("AMF encoder configured with Annex-B and repeat headers on keyframes");
+        LOG_INFO("AMF encoder configured with Annex-B and repeat headers on keyframes (GOP: {} frames)", m_fps);
         return true;
     }
     else if (hwAccel == "videotoolbox")
@@ -495,8 +532,11 @@ bool H264Encoder::initializeQSV()
 
     // 为每个关键帧重复SPS/PPS（如支持）
     av_opt_set(m_codecContext->priv_data, "repeat-headers", "1", 0);
+    // 设置GOP大小
+    QString gopSize = QString::number(m_fps);
+    av_opt_set(m_codecContext->priv_data, "g", gopSize.toStdString().c_str(), 0);
 
-    LOG_INFO("QSV encoder configured with repeat headers on keyframes");
+    LOG_INFO("QSV encoder configured with repeat headers on keyframes (GOP: {} frames)", m_fps);
     return true;
 }
 void H264Encoder::forceKeyFrame()
@@ -546,12 +586,27 @@ rtc::binary H264Encoder::encodeFrame(const QImage &image)
     }
 
     // 强制第一帧为关键帧，并确保包含SPS/PPS参数集
-    if (m_frameCount == 0 || m_forceKeyFrame)
+    // 同时每隔一定帧数（GOP大小）强制生成关键帧，防止长时间无关键帧导致花屏
+    bool needKeyFrame = (m_frameCount == 0 || m_forceKeyFrame || (m_frameCount % (m_fps * 2) == 0));
+    
+    if (needKeyFrame)
     {
         encodingFrame->pict_type = AV_PICTURE_TYPE_I;
         encodingFrame->key_frame = 1;
         
-        LOG_INFO("🔑 Forcing IDR frame (frame count: {}, force key: {})", m_frameCount, m_forceKeyFrame);
+        // 对于libx264，强制立即输出关键帧
+        if (m_hwAccelName.isEmpty()) {
+            encodingFrame->pict_type = AV_PICTURE_TYPE_I;
+        }
+        
+        if (m_frameCount % (m_fps * 2) == 0 && m_frameCount > 0)
+        {
+            LOG_DEBUG("🔑 Auto-generating IDR frame at frame {} (every 2 seconds for robustness)", m_frameCount);
+        }
+        else
+        {
+            LOG_INFO("🔑 Forcing IDR frame (frame count: {}, force key: {})", m_frameCount, m_forceKeyFrame);
+        }
         m_forceKeyFrame = false; // 重置强制关键帧标志
     }
 
@@ -711,13 +766,44 @@ rtc::binary H264Encoder::avpacketToBinary(AVPacket *packet)
         data[i] = static_cast<std::byte>(packet->data[i]);
     }
 
-    // 调试：检查输出数据的起始码
-    if (data.size() >= 4)
+    // 详细调试：检查输出数据的NAL单元类型
+    if (data.size() >= 5)
     {
-        LOG_DEBUG("H264 packet: size={}, first 4 bytes: {:02x} {:02x} {:02x} {:02x}",
-                  packet->size,
-                  static_cast<uint8_t>(data[0]), static_cast<uint8_t>(data[1]),
-                  static_cast<uint8_t>(data[2]), static_cast<uint8_t>(data[3]));
+        // 查找所有NAL单元
+        int nalCount = 0;
+        for (size_t i = 0; i + 4 < data.size(); ++i)
+        {
+            if (static_cast<uint8_t>(data[i]) == 0x00 &&
+                static_cast<uint8_t>(data[i+1]) == 0x00 &&
+                static_cast<uint8_t>(data[i+2]) == 0x00 &&
+                static_cast<uint8_t>(data[i+3]) == 0x01)
+            {
+                uint8_t nalType = static_cast<uint8_t>(data[i+4]) & 0x1F;
+                const char* nalTypeName = "Unknown";
+                switch(nalType) {
+                    case 1: nalTypeName = "Non-IDR"; break;
+                    case 5: nalTypeName = "IDR"; break;
+                    case 6: nalTypeName = "SEI"; break;
+                    case 7: nalTypeName = "SPS"; break;
+                    case 8: nalTypeName = "PPS"; break;
+                    case 9: nalTypeName = "AUD"; break;
+                }
+                
+                if (nalCount == 0) {
+                    LOG_DEBUG("H264 packet: size={}, NAL units found:", packet->size);
+                }
+                LOG_DEBUG("  NAL[{}] at offset {}: type={} ({})", nalCount, i, nalType, nalTypeName);
+                nalCount++;
+                
+                i += 4; // 跳过起始码
+            }
+        }
+        
+        if (nalCount == 0) {
+            LOG_WARN("⚠️ No Annex-B start codes found in packet! First 4 bytes: {:02x} {:02x} {:02x} {:02x}",
+                     static_cast<uint8_t>(data[0]), static_cast<uint8_t>(data[1]),
+                     static_cast<uint8_t>(data[2]), static_cast<uint8_t>(data[3]));
+        }
     }
 
     return data;

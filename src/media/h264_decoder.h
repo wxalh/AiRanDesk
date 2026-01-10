@@ -73,7 +73,6 @@ private:
     // 错误恢复和状态管理
     bool m_waitingForKeyFrame;    // 是否在等待关键帧
     int m_consecutiveErrors;      // 连续错误计数
-    int m_lastGoodFrameTimestamp; // 最后一个正确解码帧的时间戳
 };
 
 #endif // H264_DECODER_H

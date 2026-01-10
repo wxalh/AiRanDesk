@@ -1,6 +1,6 @@
 # AiRanDesk
 
-AiRanDesk 是一个基于 WebRTC 技术的远程桌面控制应用程序，支持 Windows 和 Linux 平台。
+AiRanDesk 是一个基于 WebRTC 技术的远程桌面控制应用程序，支持 Windows 7 以上 和 Linux （g++ >= 10版本） 平台。
 
 ## 功能特性
 
@@ -27,7 +27,7 @@ AiRanDesk 是一个基于 WebRTC 技术的远程桌面控制应用程序，支�
 - **[libdatachannel](https://github.com/paullouisageneau/libdatachannel)** - WebRTC 数据通道实现
 - **[spdlog](https://github.com/gabime/spdlog)** - 快速 C++ 日志库
 - **[ffmpeg](https://github.com/FFmpeg/FFmpeg)** - 多媒体框架，用于音视频编解码
-- **[ffmpeg-msvc-prebuilt](https://github.com/System233/ffmpeg-msvc-prebuilt/releases/tag/n7.1-241205)** - 打包完成的ffmpeg库
+- **[FFmpeg-Builds](https://github.com/BtbN/FFmpeg-Builds.git) ** - 打包完成的ffmpeg库
 
 ## 构建指南
 
@@ -36,14 +36,14 @@ AiRanDesk 是一个基于 WebRTC 技术的远程桌面控制应用程序，支�
 #### 前置要求
 
 1. **安装开发工具**
-   - Visual Studio 2019/2022（需要 C++ 桌面开发工作负载）
-   - CMake 3.16 或更高版本
+   - Visual Studio 2017 以上版本（需要 C++ 桌面开发工作负载，建议Visual Studio 2022）
+   - CMake 3.16 或更高版本（建议 3.31版本）
    - Git
 
 2. **安装 Qt5**
-   - 下载并安装 Qt 5.15.x（建议使用 Qt 官方在线安装器）
-   - 选择 MSVC 2019 32-bit 或 64-bit 组件（根据需要选择）
-   - 记录 Qt 安装路径，例如：`D:/Qt/5.15.2/msvc2019` 或 `D:/Qt/5.15.2/msvc2019_64`
+   - 下载并安装 Qt 5.9 以上版本（建议使用 Qt 官方在线安装器）
+   - 选择 MSVC 2022 32-bit 或 64-bit 组件（根据需要选择）
+   - 记录 Qt 安装路径，例如：`C:/Qt/Qt5.9.9/5.9.9/msvc2015` 或 `C:/Qt/Qt5.9.9/5.9.9/msvc2015_64`
 
 3. **克隆代码并初始化子模块**
    ```cmd
@@ -58,15 +58,9 @@ AiRanDesk 是一个基于 WebRTC 技术的远程桌面控制应用程序，支�
    - 下载并安装 [Win32OpenSSL-1_1_1w.exe](https://wiki.overbyte.eu/arch/openssl-1.1.1w-win32.zip)（32位）
    - 下载并安装 [Win64OpenSSL-1_1_1w.exe](https://wiki.overbyte.eu/arch/openssl-1.1.1w-win64.zip)（64位）
    - 默认安装路径：`C:/Program Files/OpenSSL-Win32` 和 `C:/Program Files/OpenSSL-Win64`
-   - 将安装后的目录复制到项目的 `third_party/openssl/` 目录下：
-     - `third_party/openssl/OpenSSL-Win32/`
-     - `third_party/openssl/OpenSSL-Win64/`
 
 2. **FFmpeg 预编译库**
-   - 从 [ffmpeg-msvc-prebuilt](https://github.com/System233/ffmpeg-msvc-prebuilt/releases/tag/n7.1-241205) 下载：
-     - `ffmpeg-n7.1-241205-gpl-x86-shared.zip`（32位）
-     - `ffmpeg-n7.1-241205-gpl-amd64-shared.zip`（64位）
-   - 解压到项目的 `third_party/ffmpeg/` 目录下
+   - 从 [FFmpeg-Builds](https://github.com/BtbN/FFmpeg-Builds.git) 下载对应系统版本的预编译库解压到自定义目录下
 
 #### 配置 CMake Presets
 
@@ -76,8 +70,9 @@ AiRanDesk 是一个基于 WebRTC 技术的远程桌面控制应用程序，支�
 {
   "name": "x86-windows-msvc",
   "cacheVariables": {
-    "QT5_DIR": "D:/Qt/5.15.2/msvc2019/lib/cmake/Qt5",
-    "CMAKE_PREFIX_PATH": "D:/Qt/5.15.2/msvc2019"
+    "QT5_DIR": "C:/Qt/Qt5.9.9/5.9.9/msvc2015",
+    "OPENSSL_ROOT_DIR": "C:/Program Files (x86)/OpenSSL-Win32",
+    "FFMPEG_ROOT_DIR": "${sourceDir}/../ffmpeg/ffmpeg-n7.1-latest-win32-gpl-shared-7.1"
   }
 }
 ```
@@ -87,8 +82,9 @@ AiRanDesk 是一个基于 WebRTC 技术的远程桌面控制应用程序，支�
 {
   "name": "x64-windows-msvc",
   "cacheVariables": {
-    "QT5_DIR": "D:/Qt/5.15.2/msvc2019_64/lib/cmake/Qt5",
-    "CMAKE_PREFIX_PATH": "D:/Qt/5.15.2/msvc2019_64"
+    "QT5_DIR": "C:/Qt/Qt5.9.9/5.9.9/msvc2015_64",
+    "OPENSSL_ROOT_DIR": "C:/Program Files/OpenSSL-Win64",
+    "FFMPEG_ROOT_DIR": "${sourceDir}/../ffmpeg/ffmpeg-n7.1-latest-win64-gpl-shared-7.1"
   }
 }
 ```
@@ -344,7 +340,7 @@ rm -rf out/build
 
 - **Qt Team** - 提供了强大的跨平台开发框架 [Qt](https://www.qt.io/)
 - **FFmpeg Team** - 提供了功能完善的多媒体处理库 [FFmpeg](https://ffmpeg.org/)
-- **System233** - 提供了预编译的多媒体处理库 [ffmpeg-msvc-prebuilt](https://github.com/System233/ffmpeg-msvc-prebuilt)
+- **BtbN** - 提供了预编译的多媒体处理库 [FFmpeg-Builds](https://github.com/BtbN/FFmpeg-Builds)
 - **Paul-Louis Ageneau** - 开发了优秀的 WebRTC 库 [libdatachannel](https://github.com/paullouisageneau/libdatachannel)
 - **Gabi Melman** - 开发了高性能日志库 [spdlog](https://github.com/gabime/spdlog)
 

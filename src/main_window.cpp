@@ -15,7 +15,7 @@
 #include <QCryptographicHash>
 
 MainWindow::MainWindow(QWidget *parent)
-    : QWidget(parent), ui(new Ui::MainWindow), windowTitle("AiRan"), textToCopy("欢迎使用%1远程工具，您的识别码：%2 \n验证码: %3"), isCaptureing(false)
+    : QWidget(parent), ui(new Ui::MainWindow), windowTitle("AiRan"), textToCopy("欢迎使用%1远程工具，您的识别码：%2\n验证码: %3"), isCaptureing(false)
 {
     initUI();
     initCli();
@@ -132,7 +132,7 @@ void MainWindow::on_btn_conn_clicked()
 
 void MainWindow::on_local_pwd_change_clicked()
 {
-    ConfigUtil->setLocalPwd(QUuid::createUuid().toString(QUuid::WithoutBraces).toUpper());
+    ConfigUtil->setLocalPwd(QUuid::createUuid().toString().remove("{").remove("}").toUpper());
     ConfigUtil->saveIni();
     ui->local_pwd->setText(ConfigUtil->getLocalPwd());
 }

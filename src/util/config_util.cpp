@@ -38,7 +38,7 @@ ConfigUtilData::ConfigUtilData(QObject *parent)
 
     if (local_pwd.isEmpty() || QUuid(local_pwd).isNull())
     {
-        local_pwd = QUuid::createUuid().toString(QUuid::WithoutBraces).toUpper();
+        local_pwd = QUuid::createUuid().toString().remove("{").remove("}").toUpper();
     }
 
     if (logLevelStr == "trace")
@@ -105,7 +105,7 @@ QString ConfigUtilData::getOrCreateUuid()
 
     // 生成新的UUID并存储
     QUuid newUuid = QUuid::createUuid();
-    QString newUuidStr = newUuid.toString(QUuid::WithoutBraces).toUpper(); // 移除花括号
+    QString newUuidStr = newUuid.toString().remove("{").remove("}").toUpper(); // 移除花括号
     settings.setValue(uuidKey, newUuidStr);
     settings.sync(); // 强制写入磁盘
     return newUuidStr;
@@ -128,12 +128,12 @@ void ConfigUtilData::saveIni()
     m_configIni->setValue("wsUrl", wsUrl);
     m_configIni->endGroup();
 
-    // m_configIni->beginGroup("ice_server");
-    // m_configIni->setValue("host", ice_host);
-    // m_configIni->setValue("port", ice_port);
-    // m_configIni->setValue("username", ice_username);
-    // m_configIni->setValue("password", ice_password);
-    // m_configIni->endGroup();
+    m_configIni->beginGroup("ice_server");
+    m_configIni->setValue("host", ice_host);
+    m_configIni->setValue("port", ice_port);
+    m_configIni->setValue("username", ice_username);
+    m_configIni->setValue("password", ice_password);
+    m_configIni->endGroup();
 
     m_configIni->sync();
 }

@@ -3,7 +3,7 @@
 #include <QScreen>
 #include <QGuiApplication>
 
-#if defined(Q_OS_WINDOWS)
+#if defined(Q_OS_WIN64) || defined(Q_OS_WIN32)
 #include <windows.h>
 #elif defined(Q_OS_LINUX)
 #include <X11/Xlib.h>

@@ -32,7 +32,7 @@ void initLog()
  * @brief isRunning 禁止多开
  * @return
  */
-#ifdef Q_OS_WINDOWS
+#if defined(Q_OS_WIN64) || defined(Q_OS_WIN32)
 #include <Windows.h>
 #else
 #include <sys/file.h>
@@ -42,7 +42,7 @@ void initLog()
 
 bool isRunning()
 {
-#ifdef Q_OS_WINDOWS
+#if defined(Q_OS_WIN64) || defined(Q_OS_WIN32)
     // Windows 使用互斥锁
     HANDLE hMutex = CreateMutexW(NULL, TRUE, L"Global\\AiRan");
     if (GetLastError() == ERROR_ALREADY_EXISTS)
@@ -76,12 +76,15 @@ bool isRunning()
  */
 int main(int argc, char *argv[])
 {
-    if (QT_VERSION >= QT_VERSION_CHECK(5, 1, 2))
-    {
+    #if (QT_VERSION >= QT_VERSION_CHECK(5, 1, 2))
         QApplication::setAttribute(Qt::AA_EnableHighDpiScaling, true);
         QApplication::setAttribute(Qt::AA_UseHighDpiPixmaps, true);
+    #endif
+
+    #if (QT_VERSION >= QT_VERSION_CHECK(5, 14, 0))
         QGuiApplication::setHighDpiScaleFactorRoundingPolicy(Qt::HighDpiScaleFactorRoundingPolicy::Round);
-    }
+    #endif
+    
     QApplication::setOrganizationName("wxalh.com");
     QApplication::setApplicationName("airan");
     QApplication a(argc, argv);
