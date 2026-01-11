@@ -144,6 +144,14 @@ if(WIN32)
     add_definitions(-DUNICODE -D_UNICODE)
     add_compile_options(/utf-8)
     add_compile_options("$<$<CXX_COMPILER_ID:MSVC>:/wd4819>")
+    
+    # Disable SAFESEH linker requirement for MSVC x86 builds because some third-party
+    # libraries (e.g., prebuilt FFmpeg) may not be SAFESEH-aware. This avoids LNK2026.
+    if(MSVC AND CMAKE_SIZEOF_VOID_P EQUAL 4)
+        message(STATUS "MSVC x86 detected: disabling /SAFESEH requirement (adding /SAFESEH:NO)")
+        set(CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} /SAFESEH:NO")
+    endif()
+
 elseif(APPLE)
     list(APPEND EXTRA_LIBS "-framework Carbon" "-framework CoreGraphics")
 elseif(UNIX)
