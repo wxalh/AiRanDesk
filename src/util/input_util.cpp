@@ -24,7 +24,7 @@ InputUtil::InputUtil(QObject *parent)
 void InputUtil::execKeyboardEvent(int keyCode, const QString &dwFlags)
 {
 
-#if defined(Q_OS_WINDOWS)
+#if defined(Q_OS_WIN64) || defined(Q_OS_WIN32)
     INPUT input = {0};
     input.type = INPUT_KEYBOARD;
     input.ki.wVk = static_cast<WORD>(keyCode);
@@ -67,7 +67,7 @@ void InputUtil::execMouseEvent(int button, qreal x_n, qreal y_n, int mouseData, 
     int x = static_cast<int>(x_n * screenRect.width() * scaleFactor);
     int y = static_cast<int>(y_n * screenRect.height() * scaleFactor);
 
-#if defined(Q_OS_WINDOWS)
+#if defined(Q_OS_WIN64) || defined(Q_OS_WIN32)
     // Windows 实现
     SetCursorPos(x, y);
     if (dwFlags == "move")
