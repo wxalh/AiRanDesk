@@ -92,7 +92,7 @@ QStringList H264Encoder::getAvailableHWAccels()
         "vaapi",       // Intel VAAPI
         "qsv",          // Intel Quick Sync (优先检测)
         "vulkan",     // Vulkan
-        "mf",     // Microsoft Media Foundation
+        // "mf",     // Microsoft Media Foundation
         "videotoolbox", // macOS
         "v4l2m2m",      // Linux V4L2
         "omx",          // OpenMAX
