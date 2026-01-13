@@ -14,7 +14,12 @@ extern "C" {
 #include <libavutil/imgutils.h>
 #include <libavutil/opt.h>
 #include <libswscale/swscale.h>
+#include <libavcodec/bsf.h>
 }
+
+#ifndef AV_ERROR_MAX_STRING_SIZE
+#define AV_ERROR_MAX_STRING_SIZE 64
+#endif
 
 class H264Encoder : public QObject {
   Q_OBJECT
@@ -44,6 +49,14 @@ private:
   AVFrame *transferToHardware(AVFrame *swFrame);
   rtc::binary avpacketToBinary(AVPacket *packet);
 
+  // Annex-B 兼容：把可能是 AVCC/长度前缀 的 H264 输出统一转为 Annex-B（起始码 0x00000001）
+  bool initAnnexBBsf();
+  rtc::binary packetToAnnexBBinary(const AVPacket *packet);
+
+  // 兜底：当关键帧里缺 SPS/PPS 时，从编码器 extradata 生成 Annex-B 并前置
+  rtc::binary getAnnexBExtradata() const;
+  static bool annexBContainsSpsPps(const rtc::binary &annexb);
+
   // FFmpeg 组件
   AVCodecContext *m_codecContext;
   const AVCodec *m_codec;
@@ -52,6 +65,7 @@ private:
   AVPacket *m_packet;
   SwsContext *m_swsContext;
   AVBufferRef *m_hwDeviceCtx;
+  AVBSFContext *m_h264Bsf;
 
   // 编码参数
   int m_width;

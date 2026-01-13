@@ -107,10 +107,16 @@ QStringList H264Decoder::getAvailableHWAccels()
 
     // 检查硬件设备类型支持，而不是特定的解码器
     const char* deviceTypes[] = {
-        "qsv",        // Intel Quick Sync (优先检测)
         "cuda",       // NVIDIA CUDA
+        "nvdec",       // NVIDIA NVDEC
+        "cuvid",      // NVIDIA CUVID
+        "amf",      // AMD AMF
+        "vaapi",      // Intel VAAPI
+        "qsv",        // Intel Quick Sync (优先检测)
         "dxva2",      // Windows DirectX
+        "d3d12va",    // Windows Direct3D 12
         "d3d11va",    // Windows Direct3D 11
+        "dxva2",     // Windows Direct3D 9
         "videotoolbox", // macOS
         "v4l2m2m",      // Linux V4L2
         "omx",          // OpenMAX
@@ -385,51 +391,73 @@ bool H264Decoder::initializeHardwareAccel(const QString& hwAccel)
 QImage H264Decoder::decodeFrame(const rtc::binary& h264Data)
 {
     QMutexLocker locker(&m_mutex);
-    
+
     if (!m_initialized) {
         LOG_ERROR("Decoder not initialized");
         return QImage();
     }
-    
+
     if (h264Data.empty()) {
         return QImage();
     }
-    
+
     // 设置数据包
     m_packet->data = const_cast<uint8_t*>(reinterpret_cast<const uint8_t*>(h264Data.data()));
     m_packet->size = static_cast<int>(h264Data.size());
-    
-    // 检查是否是关键帧（包含 SPS/PPS）
+
+    // 检查是否是关键帧（包含 SPS/PPS/IDR）
+    // 兼容：Annex-B 起始码可能是 0x00000001（4字节）或 0x000001（3字节）
     bool isKeyFrame = false;
     if (h264Data.size() >= 5) {
-        // 检查 Annex-B 起始码后的 NAL 单元类型
+        auto isStartCode4 = [&](size_t i) -> bool {
+            return i + 3 < h264Data.size() &&
+                   static_cast<uint8_t>(h264Data[i]) == 0x00 &&
+                   static_cast<uint8_t>(h264Data[i+1]) == 0x00 &&
+                   static_cast<uint8_t>(h264Data[i+2]) == 0x00 &&
+                   static_cast<uint8_t>(h264Data[i+3]) == 0x01;
+        };
+        auto isStartCode3 = [&](size_t i) -> bool {
+            return i + 2 < h264Data.size() &&
+                   static_cast<uint8_t>(h264Data[i]) == 0x00 &&
+                   static_cast<uint8_t>(h264Data[i+1]) == 0x00 &&
+                   static_cast<uint8_t>(h264Data[i+2]) == 0x01;
+        };
+
         for (size_t i = 0; i + 4 < h264Data.size(); ++i) {
-            if (static_cast<uint8_t>(h264Data[i]) == 0x00 &&
-                static_cast<uint8_t>(h264Data[i+1]) == 0x00 &&
-                static_cast<uint8_t>(h264Data[i+2]) == 0x00 &&
-                static_cast<uint8_t>(h264Data[i+3]) == 0x01) {
-                uint8_t nalType = static_cast<uint8_t>(h264Data[i+4]) & 0x1F;
-                // NAL类型：7=SPS, 8=PPS, 5=IDR
-                if (nalType == 7 || nalType == 8 || nalType == 5) {
-                    isKeyFrame = true;
-                    if (m_waitingForKeyFrame) {
-                        LOG_INFO("🔑 Received key frame (NAL type: {}), resuming decoding", nalType);
-                        m_waitingForKeyFrame = false;
-                        m_consecutiveErrors = 0;
-                    }
-                    break;
+            size_t nalOffset = 0;
+            if (isStartCode4(i)) {
+                nalOffset = i + 4;
+            } else if (isStartCode3(i)) {
+                nalOffset = i + 3;
+            } else {
+                continue;
+            }
+
+            if (nalOffset >= h264Data.size()) {
+                continue;
+            }
+
+            uint8_t nalType = static_cast<uint8_t>(h264Data[nalOffset]) & 0x1F;
+            // NAL类型：7=SPS, 8=PPS, 5=IDR
+            if (nalType == 7 || nalType == 8 || nalType == 5) {
+                isKeyFrame = true;
+                if (m_waitingForKeyFrame) {
+                    LOG_INFO("🔑 Received key frame (NAL type: {}), resuming decoding", nalType);
+                    m_waitingForKeyFrame = false;
+                    m_consecutiveErrors = 0;
                 }
+                break;
             }
         }
     }
-    
+
     // 如果正在等待关键帧且当前帧不是关键帧，则跳过
     if (m_waitingForKeyFrame && !isKeyFrame) {
         LOG_DEBUG("Skipping non-key frame while waiting for key frame");
         av_packet_unref(m_packet);
         return QImage();
     }
-    
+
     // 发送数据包到解码器
     int ret = avcodec_send_packet(m_codecContext, m_packet);
     if (ret < 0) {
@@ -458,7 +486,7 @@ QImage H264Decoder::decodeFrame(const rtc::binary& h264Data)
         char errbuf[AV_ERROR_MAX_STRING_SIZE];
         av_strerror(ret, errbuf, sizeof(errbuf));
         LOG_ERROR("Error receiving frame from decoder: {}", errbuf);
-        
+
         // 增加错误计数
         m_consecutiveErrors++;
         if (m_consecutiveErrors >= 10) {
@@ -466,8 +494,7 @@ QImage H264Decoder::decodeFrame(const rtc::binary& h264Data)
             m_waitingForKeyFrame = true;
             avcodec_flush_buffers(m_codecContext);
         }
-        
-        av_packet_unref(m_packet);
+
         av_packet_unref(m_packet);
         return QImage();
     }
@@ -887,19 +914,11 @@ enum AVPixelFormat H264Decoder::get_hw_format(AVCodecContext *ctx, const enum AV
         }
     }
     
-    // 次优选择：任何DirectX格式（用于Intel集成显卡）
-    for (p = pix_fmts; *p != AV_PIX_FMT_NONE; p++) {
-        if (*p == AV_PIX_FMT_D3D11 || *p == AV_PIX_FMT_DXVA2_VLD || *p == AV_PIX_FMT_D3D11VA_VLD) {
-            LOG_INFO("Selected fallback DirectX format for hardware acceleration: {}", av_get_pix_fmt_name(*p));
-            return *p;
-        }
-    }
-    
     // 最后选择：任何硬件格式
     for (p = pix_fmts; *p != AV_PIX_FMT_NONE; p++) {
         if (*p == AV_PIX_FMT_CUDA 
-            #ifdef _WIN32
-            || *p == AV_PIX_FMT_D3D12 || *p == AV_PIX_FMT_D3D11 
+            #ifdef Q_OS_WIN32
+            || *p == AV_PIX_FMT_D3D11 
             || *p == AV_PIX_FMT_DXVA2_VLD || *p == AV_PIX_FMT_D3D11VA_VLD
             #endif
         ) {

@@ -3,6 +3,7 @@
 
 #include <memory>
 #include <string>
+#include <QtGlobal>
 #include <QString>
 #include <spdlog/spdlog.h>
 #include <spdlog/sinks/basic_file_sink.h>

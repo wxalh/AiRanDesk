@@ -16,6 +16,10 @@ extern "C" {
 #include <libavutil/hwcontext.h>
 }
 
+#ifndef AV_ERROR_MAX_STRING_SIZE
+#define AV_ERROR_MAX_STRING_SIZE 64
+#endif
+
 class H264Decoder : public QObject
 {
     Q_OBJECT

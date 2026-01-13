@@ -71,6 +71,7 @@ H264Encoder::H264Encoder(QObject *parent)
     , m_width(0), m_height(0), m_fps(30), m_bitrate(2000000), m_frameCount(0)
     , m_hwPixelFormat(AV_PIX_FMT_NONE), m_initialized(false), m_forceKeyFrame(false)
 {
+    m_h264Bsf = nullptr;
 }
 
 H264Encoder::~H264Encoder()
@@ -84,9 +85,14 @@ QStringList H264Encoder::getAvailableHWAccels()
 
     // 检查常见的硬件加速器，按优先级排序
     const char *accelNames[] = {
-        "qsv",          // Intel Quick Sync (优先检测)
+        "nvidia",       // NVIDIA CUDA
+        "cuda",       // NVIDIA CUDA
         "nvenc",        // NVIDIA
         "amf",          // AMD
+        "vaapi",       // Intel VAAPI
+        "qsv",          // Intel Quick Sync (优先检测)
+        "vulkan",     // Vulkan
+        "mf",     // Microsoft Media Foundation
         "videotoolbox", // macOS
         "v4l2m2m",      // Linux V4L2
         "omx",          // OpenMAX
@@ -360,6 +366,12 @@ bool H264Encoder::initializeCodec(const QString &hwAccel)
         }
     }
 
+    // 初始化 Annex-B 输出适配（必须：下游 WebRTC 打包器和 decoder 都在按起始码解析）
+    if (!initAnnexBBsf())
+    {
+        LOG_WARN("Failed to initialize H264 bitstream filter (h264_mp4toannexb). Will output raw packets as-is.");
+    }
+
     // 分配帧
     m_frame = av_frame_alloc();
     if (!m_frame)
@@ -396,148 +408,323 @@ bool H264Encoder::initializeCodec(const QString &hwAccel)
     return true;
 }
 
-bool H264Encoder::initializeHardwareAccel(const QString &hwAccel)
+bool H264Encoder::initAnnexBBsf()
 {
-    if (hwAccel == "qsv")
+    // 释放旧的（比如重复 initialize）
+    if (m_h264Bsf)
     {
-        // QSV特殊处理：使用简化初始化
-        return initializeQSV();
+        av_bsf_free(&m_h264Bsf);
+        m_h264Bsf = nullptr;
     }
 
-    // 其他硬件加速器的通用处理
-    if (hwAccel == "nvenc")
+    const AVBitStreamFilter *bsf = av_bsf_get_by_name("h264_mp4toannexb");
+    if (!bsf)
     {
-        // NVENC统一使用NV12格式
-        m_codecContext->pix_fmt = AV_PIX_FMT_NV12;
-        m_hwPixelFormat = AV_PIX_FMT_NONE;
-
-        // NVENC特定选项
-        av_opt_set(m_codecContext->priv_data, "preset", "fast", 0);
-        av_opt_set(m_codecContext->priv_data, "profile", "high", 0);
-        av_opt_set(m_codecContext->priv_data, "rc", "cbr", 0);
-        // 确保强制关键帧为IDR
-        av_opt_set(m_codecContext->priv_data, "forced-idr", "1", 0);
-        // 确保每个IDR前重复输出SPS/PPS
-        av_opt_set(m_codecContext->priv_data, "repeat-headers", "1", 0);
-        // 使用Annex-B起始码
-        av_opt_set(m_codecContext->priv_data, "annexb", "1", 0);
-        // 设置GOP大小
-        QString gopSize = QString::number(m_fps);
-        av_opt_set(m_codecContext->priv_data, "g", gopSize.toStdString().c_str(), 0);
-
-        LOG_INFO("NVENC encoder configured with Annex-B, forced IDR and repeat headers on keyframes (GOP: {} frames)", m_fps);
-        return true;
-    }
-    else if (hwAccel == "amf")
-    {
-        // AMF统一使用NV12格式
-        m_codecContext->pix_fmt = AV_PIX_FMT_NV12;
-        m_hwPixelFormat = AV_PIX_FMT_NONE;
-
-        // AMF特定选项
-        av_opt_set(m_codecContext->priv_data, "usage", "lowlatency", 0);
-        av_opt_set(m_codecContext->priv_data, "profile", "high", 0);
-        av_opt_set(m_codecContext->priv_data, "rc", "cbr", 0);
-        // 尝试在关键帧重复SPS/PPS（取决于驱动/版本支持）
-        av_opt_set(m_codecContext->priv_data, "repeat-headers", "1", 0);
-        // 使用Annex-B起始码（若支持）
-        av_opt_set(m_codecContext->priv_data, "annexb", "1", 0);
-        // 设置GOP大小
-        av_opt_set(m_codecContext->priv_data, "gops_per_idr", "1", 0);
-
-        LOG_INFO("AMF encoder configured with Annex-B and repeat headers on keyframes (GOP: {} frames)", m_fps);
-        return true;
-    }
-    else if (hwAccel == "videotoolbox")
-    {
-        m_hwPixelFormat = AV_PIX_FMT_VIDEOTOOLBOX;
-        m_codecContext->pix_fmt = AV_PIX_FMT_VIDEOTOOLBOX;
-    }
-    else
-    {
-        m_codecContext->pix_fmt = AV_PIX_FMT_NV12;
-        return true;
+        LOG_WARN("Bitstream filter not found: h264_mp4toannexb");
+        return false;
     }
 
-    // 只有VideoToolbox需要硬件设备上下文
-    if (hwAccel == "videotoolbox")
+    int ret = av_bsf_alloc(bsf, &m_h264Bsf);
+    if (ret < 0 || !m_h264Bsf)
     {
-        // 使用共享的硬件设备上下文管理器
-        m_hwDeviceCtx = HardwareContextManager::instance().getDeviceContext("videotoolbox");
-        if (!m_hwDeviceCtx)
+        char errbuf[AV_ERROR_MAX_STRING_SIZE];
+        av_strerror(ret, errbuf, sizeof(errbuf));
+        LOG_WARN("av_bsf_alloc failed: {}", errbuf);
+        m_h264Bsf = nullptr;
+        return false;
+    }
+
+    if (!m_codecContext)
+    {
+        LOG_WARN("Codec context not ready for BSF init");
+        av_bsf_free(&m_h264Bsf);
+        m_h264Bsf = nullptr;
+        return false;
+    }
+
+    // 把编码器参数传给 BSF（SPS/PPS/extradata 等）
+    ret = avcodec_parameters_from_context(m_h264Bsf->par_in, m_codecContext);
+    if (ret < 0)
+    {
+        char errbuf[AV_ERROR_MAX_STRING_SIZE];
+        av_strerror(ret, errbuf, sizeof(errbuf));
+        LOG_WARN("avcodec_parameters_from_context failed: {}", errbuf);
+        av_bsf_free(&m_h264Bsf);
+        m_h264Bsf = nullptr;
+        return false;
+    }
+
+    m_h264Bsf->time_base_in = m_codecContext->time_base;
+
+    ret = av_bsf_init(m_h264Bsf);
+    if (ret < 0)
+    {
+        char errbuf[AV_ERROR_MAX_STRING_SIZE];
+        av_strerror(ret, errbuf, sizeof(errbuf));
+        LOG_WARN("av_bsf_init failed: {}", errbuf);
+        av_bsf_free(&m_h264Bsf);
+        m_h264Bsf = nullptr;
+        return false;
+    }
+
+    LOG_INFO("H264 bitstream filter initialized: h264_mp4toannexb (force Annex-B output)");
+    return true;
+}
+
+rtc::binary H264Encoder::getAnnexBExtradata() const
+{
+    rtc::binary out;
+
+    if (!m_codecContext || !m_codecContext->extradata || m_codecContext->extradata_size <= 0)
+    {
+        return out;
+    }
+
+    // 首选：用 h264_mp4toannexb 把 AVCC extradata 转成 Annex-B（若 extradata 本身已是 Annex-B 也能正常返回）
+    const AVBitStreamFilter *bsf = av_bsf_get_by_name("h264_mp4toannexb");
+    if (!bsf)
+    {
+        return out;
+    }
+
+    AVBSFContext *ctx = nullptr;
+    int ret = av_bsf_alloc(bsf, &ctx);
+    if (ret < 0 || !ctx)
+    {
+        return out;
+    }
+
+    // 拷贝 codec 参数（让 bsf 知道 extradata 的解析方式）
+    ret = avcodec_parameters_from_context(ctx->par_in, m_codecContext);
+    if (ret < 0)
+    {
+        av_bsf_free(&ctx);
+        return out;
+    }
+
+    // 强制把 extradata 输入给 bsf（内部会转成 Annex-B 风格的 SPS/PPS）
+    if (ctx->par_in->extradata && ctx->par_in->extradata_size > 0)
+    {
+        ctx->par_in->extradata = (uint8_t *)av_mallocz(m_codecContext->extradata_size + AV_INPUT_BUFFER_PADDING_SIZE);
+        if (!ctx->par_in->extradata)
         {
-            LOG_ERROR("Failed to get shared VideoToolbox device context");
-            return false;
+            av_bsf_free(&ctx);
+            return out;
+        }
+        memcpy(ctx->par_in->extradata, m_codecContext->extradata, m_codecContext->extradata_size);
+        ctx->par_in->extradata_size = m_codecContext->extradata_size;
+    }
+
+    ctx->time_base_in = m_codecContext->time_base;
+
+    ret = av_bsf_init(ctx);
+    if (ret < 0)
+    {
+        av_bsf_free(&ctx);
+        return out;
+    }
+
+    // 让 bsf 产出带起始码的 SPS/PPS：做法是送一个空 packet 触发输出
+    AVPacket *in = av_packet_alloc();
+    if (!in)
+    {
+        av_bsf_free(&ctx);
+        return out;
+    }
+
+    in->data = nullptr;
+    in->size = 0;
+
+    // 某些版本要求先 send_packet/再 receive_packet；即使 EAGAIN/EOF 也无所谓
+    (void)av_bsf_send_packet(ctx, in);
+    av_packet_free(&in);
+
+    for (;;)
+    {
+        AVPacket *p = av_packet_alloc();
+        if (!p)
+        {
+            break;
         }
 
-        m_codecContext->hw_device_ctx = av_buffer_ref(m_hwDeviceCtx);
-
-        // 创建硬件帧上下文
-        AVBufferRef *hwFramesRef = av_hwframe_ctx_alloc(m_hwDeviceCtx);
-        if (!hwFramesRef)
+        ret = av_bsf_receive_packet(ctx, p);
+        if (ret == AVERROR(EAGAIN) || ret == AVERROR_EOF)
         {
-            LOG_ERROR("Failed to allocate hardware frames context");
-            return false;
+            av_packet_free(&p);
+            break;
+        }
+        if (ret < 0)
+        {
+            av_packet_free(&p);
+            break;
         }
 
-        AVHWFramesContext *hwFramesCtx = (AVHWFramesContext *)hwFramesRef->data;
-        hwFramesCtx->format = m_hwPixelFormat;
-        hwFramesCtx->sw_format = AV_PIX_FMT_NV12;
-        hwFramesCtx->width = m_width;
-        hwFramesCtx->height = m_height;
-        hwFramesCtx->initial_pool_size = 20;
+        size_t oldSize = out.size();
+        out.resize(oldSize + static_cast<size_t>(p->size));
+        memcpy(out.data() + oldSize, p->data, static_cast<size_t>(p->size));
+        av_packet_free(&p);
+    }
 
-        int ret = av_hwframe_ctx_init(hwFramesRef);
+    av_bsf_free(&ctx);
+    return out;
+}
+
+bool H264Encoder::annexBContainsSpsPps(const rtc::binary &annexb)
+{
+    if (annexb.size() < 5)
+    {
+        return false;
+    }
+
+    bool hasSps = false;
+    bool hasPps = false;
+
+    auto isStartCode4 = [&](size_t i) -> bool {
+        return i + 3 < annexb.size() &&
+               static_cast<uint8_t>(annexb[i]) == 0x00 &&
+               static_cast<uint8_t>(annexb[i + 1]) == 0x00 &&
+               static_cast<uint8_t>(annexb[i + 2]) == 0x00 &&
+               static_cast<uint8_t>(annexb[i + 3]) == 0x01;
+    };
+    auto isStartCode3 = [&](size_t i) -> bool {
+        return i + 2 < annexb.size() &&
+               static_cast<uint8_t>(annexb[i]) == 0x00 &&
+               static_cast<uint8_t>(annexb[i + 1]) == 0x00 &&
+               static_cast<uint8_t>(annexb[i + 2]) == 0x01;
+    };
+
+    for (size_t i = 0; i + 4 < annexb.size(); ++i)
+    {
+        size_t nalOffset = 0;
+        if (isStartCode4(i))
+        {
+            nalOffset = i + 4;
+        }
+        else if (isStartCode3(i))
+        {
+            nalOffset = i + 3;
+        }
+        else
+        {
+            continue;
+        }
+
+        if (nalOffset >= annexb.size())
+        {
+            continue;
+        }
+
+        uint8_t nalType = static_cast<uint8_t>(annexb[nalOffset]) & 0x1F;
+        if (nalType == 7)
+        {
+            hasSps = true;
+        }
+        else if (nalType == 8)
+        {
+            hasPps = true;
+        }
+
+        if (hasSps && hasPps)
+        {
+            return true;
+        }
+    }
+
+    return false;
+}
+
+rtc::binary H264Encoder::packetToAnnexBBinary(const AVPacket *packet)
+{
+    // 兜底：没有 BSF 或 packet 为空，则原样输出
+    if (!packet || packet->size <= 0)
+    {
+        return rtc::binary();
+    }
+
+    if (!m_h264Bsf)
+    {
+        return avpacketToBinary(const_cast<AVPacket *>(packet));
+    }
+
+    // av_bsf_send_packet 会接管引用计数：这里用 ref packet 避免影响调用方 packet 生命周期
+    AVPacket *in = av_packet_alloc();
+    if (!in)
+    {
+        return avpacketToBinary(const_cast<AVPacket *>(packet));
+    }
+
+    int ret = av_packet_ref(in, packet);
+    if (ret < 0)
+    {
+        av_packet_free(&in);
+        return avpacketToBinary(const_cast<AVPacket *>(packet));
+    }
+
+    ret = av_bsf_send_packet(m_h264Bsf, in);
+    // send_packet 成功后 BSF 会持有/释放 in；失败则我们释放
+    if (ret < 0)
+    {
+        char errbuf[AV_ERROR_MAX_STRING_SIZE];
+        av_strerror(ret, errbuf, sizeof(errbuf));
+        LOG_WARN("av_bsf_send_packet failed: {}", errbuf);
+        av_packet_free(&in);
+        return avpacketToBinary(const_cast<AVPacket *>(packet));
+    }
+
+    rtc::binary result;
+
+    for (;;)
+    {
+        AVPacket *out = av_packet_alloc();
+        if (!out)
+        {
+            break;
+        }
+
+        ret = av_bsf_receive_packet(m_h264Bsf, out);
+        if (ret == AVERROR(EAGAIN) || ret == AVERROR_EOF)
+        {
+            av_packet_free(&out);
+            break;
+        }
         if (ret < 0)
         {
             char errbuf[AV_ERROR_MAX_STRING_SIZE];
             av_strerror(ret, errbuf, sizeof(errbuf));
-            LOG_ERROR("Failed to initialize hardware frames context: {}", errbuf);
-            av_buffer_unref(&hwFramesRef);
-            return false;
+            LOG_WARN("av_bsf_receive_packet failed: {}", errbuf);
+            av_packet_free(&out);
+            break;
         }
 
-        m_codecContext->hw_frames_ctx = hwFramesRef;
+        rtc::binary one = avpacketToBinary(out);
+        result.insert(result.end(), one.begin(), one.end());
+        av_packet_free(&out);
     }
 
-    return true;
-}
-
-bool H264Encoder::initializeQSV()
-{
-    LOG_INFO("Initializing Intel QSV encoder with NV12 software format for compatibility");
-
-    // QSV要求分辨率必须是16的倍数，调整分辨率
-    int alignedWidth = (m_width + 15) & ~15;
-    int alignedHeight = (m_height + 15) & ~15;
-
-    if (alignedWidth != m_width || alignedHeight != m_height)
+    // 兜底：关键帧如果没带 SPS/PPS，就把 extradata 的 SPS/PPS 前置，提升随机花屏恢复能力。
+    // 注：只在 packet 自身被标记为关键帧时做（避免每帧都塞头，带宽抖动）。
+    if ((packet->flags & AV_PKT_FLAG_KEY) != 0)
     {
-        LOG_INFO("Aligning QSV resolution from {}x{} to {}x{}", m_width, m_height, alignedWidth, alignedHeight);
-        m_codecContext->width = alignedWidth;
-        m_codecContext->height = alignedHeight;
+        if (!annexBContainsSpsPps(result))
+        {
+            rtc::binary extra = getAnnexBExtradata();
+            if (!extra.empty())
+            {
+                // 确保 extra 里也有起始码；若 bsf 未产出，则不前置
+                if (extra.size() >= 4)
+                {
+                    rtc::binary merged;
+                    merged.reserve(extra.size() + result.size());
+                    merged.insert(merged.end(), extra.begin(), extra.end());
+                    merged.insert(merged.end(), result.begin(), result.end());
+                    result.swap(merged);
+                    LOG_DEBUG("Prepended SPS/PPS extradata to keyframe packet (size: {} + {})", extra.size(), result.size());
+                }
+            }
+        }
     }
 
-    // QSV统一使用NV12软件格式，避免硬件帧上下文问题
-    m_codecContext->pix_fmt = AV_PIX_FMT_NV12;
-    m_hwPixelFormat = AV_PIX_FMT_NONE;
-    m_hwDeviceCtx = nullptr;
-
-    // QSV特定的编码器选项
-    av_opt_set(m_codecContext->priv_data, "preset", "medium", 0);
-    av_opt_set(m_codecContext->priv_data, "profile", "high", 0);
-
-    // QSV特定参数调整
-    m_codecContext->max_b_frames = 0;
-
-    // 为每个关键帧重复SPS/PPS（如支持）
-    av_opt_set(m_codecContext->priv_data, "repeat-headers", "1", 0);
-    // 设置GOP大小
-    QString gopSize = QString::number(m_fps);
-    av_opt_set(m_codecContext->priv_data, "g", gopSize.toStdString().c_str(), 0);
-
-    LOG_INFO("QSV encoder configured with repeat headers on keyframes (GOP: {} frames)", m_fps);
-    return true;
+    return result;
 }
 void H264Encoder::forceKeyFrame()
 {
@@ -576,8 +763,9 @@ rtc::binary H264Encoder::encodeFrame(const QImage &image)
     // 如果使用硬件加速，需要将软件帧传输到硬件
     if (m_hwPixelFormat != AV_PIX_FMT_NONE && m_hwDeviceCtx)
     {
-        encodingFrame = transferToHardware(inputFrame);
+        AVFrame *hw = transferToHardware(inputFrame);
         av_frame_free(&inputFrame);
+        encodingFrame = hw;
         if (!encodingFrame)
         {
             LOG_ERROR("Failed to transfer frame to hardware");
@@ -592,13 +780,18 @@ rtc::binary H264Encoder::encodeFrame(const QImage &image)
     if (needKeyFrame)
     {
         encodingFrame->pict_type = AV_PICTURE_TYPE_I;
-        encodingFrame->key_frame = 1;
-        
+
+        // 注意：部分 FFmpeg 版本的 AVFrame 没有 key_frame 字段（例如 4.4 系列头文件）。
+        // 这里用 flags 做兼容标记；真正强制 IDR 主要依赖 pict_type + 编码器侧参数/请求。
+#ifdef AV_FRAME_FLAG_KEY
+        encodingFrame->flags |= AV_FRAME_FLAG_KEY;
+#endif
+
         // 对于libx264，强制立即输出关键帧
         if (m_hwAccelName.isEmpty()) {
             encodingFrame->pict_type = AV_PICTURE_TYPE_I;
         }
-        
+
         if (m_frameCount % (m_fps * 2) == 0 && m_frameCount > 0)
         {
             LOG_DEBUG("🔑 Auto-generating IDR frame at frame {} (every 2 seconds for robustness)", m_frameCount);
@@ -616,6 +809,7 @@ rtc::binary H264Encoder::encodeFrame(const QImage &image)
     // 增加帧计数
     m_frameCount++;
 
+    // 只释放我们当前持有的 encodingFrame，避免 inputFrame 再次释放导致崩溃
     av_frame_free(&encodingFrame);
 
     if (ret < 0)
@@ -644,12 +838,14 @@ rtc::binary H264Encoder::encodeFrame(const QImage &image)
             break;
         }
 
-        // 确保数据包不为空
         if (m_packet->size > 0)
         {
-            // 转换数据包为二进制数据
-            rtc::binary packetData = avpacketToBinary(m_packet);
-            result.insert(result.end(), packetData.begin(), packetData.end());
+            // 关键：统一转 Annex-B，最大兼容性（WebRTC packetizer / 自家 decoder 都按起始码解析）
+            rtc::binary packetData = packetToAnnexBBinary(m_packet);
+            if (!packetData.empty())
+            {
+                result.insert(result.end(), packetData.begin(), packetData.end());
+            }
         }
         else
         {
@@ -917,6 +1113,199 @@ AVFrame *H264Encoder::transferToHardware(AVFrame *swFrame)
     return hwFrame;
 }
 
+bool H264Encoder::initializeHardwareAccel(const QString &hwAccel)
+{
+    if (!m_codecContext)
+    {
+        LOG_ERROR("initializeHardwareAccel called with null codec context");
+        return false;
+    }
+
+    // QSV 单独走（它对 hw_frames_ctx/对齐更敏感）
+    if (hwAccel == "qsv")
+    {
+        return initializeQSV();
+    }
+
+    // 关键修正：NVENC/AMF/MF/D3D12VA 这类编码器绝大多数期望的是 system-memory NV12 输入，
+    // 不需要也不应该配置 hw_frames_ctx，更不要把 pix_fmt 设成 CUDA/VAAPI 等硬件像素格式。
+    // 否则 avcodec_send_frame() 很容易报 "Generic error in an external library"。
+
+    // 先默认走“软件帧输入”（NV12）
+    m_hwPixelFormat = AV_PIX_FMT_NONE;
+    m_codecContext->pix_fmt = AV_PIX_FMT_NV12;
+
+    // 分辨率对齐：保守处理，避免硬编吃不下（尤其是 NVENC/D3D12VA 对奇数分辨率很敏感）
+    if ((m_codecContext->width & 1) || (m_codecContext->height & 1))
+    {
+        int w = (m_codecContext->width + 1) & ~1;
+        int h = (m_codecContext->height + 1) & ~1;
+        LOG_WARN("Aligning HW encoder resolution from {}x{} to {}x{}", m_codecContext->width, m_codecContext->height, w, h);
+        m_codecContext->width = w;
+        m_codecContext->height = h;
+        m_width = w;
+        m_height = h;
+    }
+
+    // 仅对明确需要 hwframe 的编码器才去创建/绑定 hwdevice + hwframes。
+    // Windows 常见：
+    // - h264_nvenc / h264_mf / h264_d3d12va : NV12 system-memory
+    // - h264_vaapi / h264_videotoolbox     : 通常需要 hw pix_fmt
+    bool needHwFrames = false;
+
+    if (hwAccel == "vaapi")
+    {
+        needHwFrames = true;
+        m_hwPixelFormat = AV_PIX_FMT_VAAPI;
+        m_codecContext->pix_fmt = m_hwPixelFormat;
+    }
+    else if (hwAccel == "videotoolbox")
+    {
+        needHwFrames = true;
+        m_hwPixelFormat = AV_PIX_FMT_VIDEOTOOLBOX;
+        m_codecContext->pix_fmt = m_hwPixelFormat;
+    }
+    else if (hwAccel == "cuda")
+    {
+        // h264_cuda 很少见且行为与 nvenc 不同；若用户真要走它，则按 hwframe 路径处理。
+        needHwFrames = true;
+        m_hwPixelFormat = AV_PIX_FMT_CUDA;
+        m_codecContext->pix_fmt = m_hwPixelFormat;
+    }
+
+    if (needHwFrames)
+    {
+        m_hwDeviceCtx = HardwareContextManager::instance().getDeviceContext(hwAccel);
+        if (!m_hwDeviceCtx)
+        {
+            LOG_ERROR("Failed to create/get hardware device context for {}", hwAccel);
+            m_hwPixelFormat = AV_PIX_FMT_NONE;
+            m_codecContext->pix_fmt = AV_PIX_FMT_NV12;
+            return false;
+        }
+
+        m_codecContext->hw_device_ctx = av_buffer_ref(m_hwDeviceCtx);
+        if (!m_codecContext->hw_device_ctx)
+        {
+            LOG_ERROR("Failed to ref hw_device_ctx for {}", hwAccel);
+            return false;
+        }
+
+        AVBufferRef *hwFramesRef = av_hwframe_ctx_alloc(m_hwDeviceCtx);
+        if (!hwFramesRef)
+        {
+            LOG_ERROR("Failed to allocate hwframe context for {}", hwAccel);
+            return false;
+        }
+
+        AVHWFramesContext *framesCtx = reinterpret_cast<AVHWFramesContext *>(hwFramesRef->data);
+        framesCtx->format = m_hwPixelFormat;
+        framesCtx->sw_format = AV_PIX_FMT_NV12;
+        framesCtx->width = m_codecContext->width;
+        framesCtx->height = m_codecContext->height;
+        framesCtx->initial_pool_size = 20;
+
+        int ret = av_hwframe_ctx_init(hwFramesRef);
+        if (ret < 0)
+        {
+            char errbuf[AV_ERROR_MAX_STRING_SIZE];
+            av_strerror(ret, errbuf, sizeof(errbuf));
+            LOG_ERROR("Failed to init hwframe context for {}: {}", hwAccel, errbuf);
+            av_buffer_unref(&hwFramesRef);
+            return false;
+        }
+
+        m_codecContext->hw_frames_ctx = hwFramesRef;
+    }
+
+    // 硬编专有参数（稳定优先、低延迟）
+    if (hwAccel == "nvenc")
+    {
+        // 说明：不同 FFmpeg/NVENC 版本可用值不同；这里选择相对保守且广泛支持的取值
+        av_opt_set(m_codecContext->priv_data, "preset", "p4", 0);
+        av_opt_set(m_codecContext->priv_data, "tune", "ll", 0);
+        av_opt_set(m_codecContext->priv_data, "rc", "cbr", 0);
+        av_opt_set(m_codecContext->priv_data, "forced-idr", "1", 0);
+        av_opt_set(m_codecContext->priv_data, "repeat-headers", "1", 0);
+
+        // 明确 profile，避免某些驱动/构建默认高 profile 导致兼容性问题
+        av_opt_set(m_codecContext->priv_data, "profile", "baseline", 0);
+
+        // 若驱动支持，启用 0-latency（不支持会被忽略/返回错误，FFmpeg 不会因此崩）
+        av_opt_set(m_codecContext->priv_data, "zerolatency", "1", 0);
+    }
+    else if (hwAccel == "amf")
+    {
+        av_opt_set(m_codecContext->priv_data, "usage", "lowlatency", 0);
+        av_opt_set(m_codecContext->priv_data, "rc", "cbr", 0);
+        av_opt_set(m_codecContext->priv_data, "repeat-headers", "1", 0);
+        av_opt_set(m_codecContext->priv_data, "profile", "baseline", 0);
+    }
+    else if (hwAccel == "mf")
+    {
+        // MF 通常吃 NV12 system-memory
+        m_codecContext->pix_fmt = AV_PIX_FMT_NV12;
+
+        // 有些 build 支持下列选项，有些不支持；不支持的话 opt_set 失败也不致命
+        av_opt_set(m_codecContext->priv_data, "rate_control", "cbr", 0);
+    }
+    else if (hwAccel == "d3d12va")
+    {
+        // d3d12va 编码器同样通常吃 NV12 system-memory
+        m_codecContext->pix_fmt = AV_PIX_FMT_NV12;
+    }
+    else if (hwAccel == "vaapi")
+    {
+        av_opt_set(m_codecContext->priv_data, "rc_mode", "CBR", 0);
+        av_opt_set(m_codecContext->priv_data, "low_power", "1", 0);
+        av_opt_set(m_codecContext->priv_data, "idr_interval", "1", 0);
+    }
+
+    m_codecContext->max_b_frames = 0;
+
+    LOG_INFO("Hardware encoder pre-configured: hwAccel={}, pix_fmt={}, hwPixFmt={}, hwFramesCtx={}",
+             hwAccel,
+             av_get_pix_fmt_name(m_codecContext->pix_fmt),
+             (m_hwPixelFormat == AV_PIX_FMT_NONE ? "none" : av_get_pix_fmt_name(m_hwPixelFormat)),
+             (m_codecContext->hw_frames_ctx ? "yes" : "no"));
+
+    return true;
+}
+
+bool H264Encoder::initializeQSV()
+{
+    if (!m_codecContext)
+    {
+        return false;
+    }
+
+    // QSV 对分辨率对齐很敏感：按 16 对齐
+    int alignedW = (m_codecContext->width + 15) & ~15;
+    int alignedH = (m_codecContext->height + 15) & ~15;
+    if (alignedW != m_codecContext->width || alignedH != m_codecContext->height)
+    {
+        LOG_WARN("Aligning QSV resolution from {}x{} to {}x{}", m_codecContext->width, m_codecContext->height, alignedW, alignedH);
+        m_codecContext->width = alignedW;
+        m_codecContext->height = alignedH;
+        m_width = alignedW;
+        m_height = alignedH;
+    }
+
+    // QSV：优先走 NV12 system-memory 输入（更兼容，避免复杂的 hwframe 管线）
+    m_codecContext->pix_fmt = AV_PIX_FMT_NV12;
+    m_hwPixelFormat = AV_PIX_FMT_NONE;
+
+    // QSV 常用稳定参数（不一定每个 build 都支持，设置失败不会致命）
+    av_opt_set(m_codecContext->priv_data, "async_depth", "1", 0);
+    av_opt_set(m_codecContext->priv_data, "look_ahead", "0", 0);
+    av_opt_set(m_codecContext->priv_data, "b", "0", 0);
+    av_opt_set(m_codecContext->priv_data, "bf", "0", 0);
+    av_opt_set(m_codecContext->priv_data, "repeat-headers", "1", 0);
+
+    LOG_INFO("QSV encoder pre-configured: pix_fmt=NV12, aligned {}x{}", m_codecContext->width, m_codecContext->height);
+    return true;
+}
+
 void H264Encoder::cleanup()
 {
     if (m_packet)
@@ -954,6 +1343,13 @@ void H264Encoder::cleanup()
     {
         av_buffer_unref(&m_hwDeviceCtx);
         m_hwDeviceCtx = nullptr;
+    }
+
+    // 释放 BSF
+    if (m_h264Bsf)
+    {
+        av_bsf_free(&m_h264Bsf);
+        m_h264Bsf = nullptr;
     }
 
     m_codec = nullptr;
