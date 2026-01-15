@@ -2,6 +2,11 @@ cmake_minimum_required(VERSION 3.16)
 
 project(AiRanDesk VERSION 3.0 LANGUAGES CXX)
 
+if(MSVC)
+    add_definitions(-DUNICODE -D_UNICODE)
+    add_compile_options(/utf-8 /wd4819 /wd5105)
+endif()
+
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
@@ -141,10 +146,6 @@ if(WIN32)
         Bcrypt.lib
     )
 
-    add_definitions(-DUNICODE -D_UNICODE)
-    add_compile_options(/utf-8)
-    add_compile_options("$<$<CXX_COMPILER_ID:MSVC>:/wd4819>")
-    
     # Disable SAFESEH linker requirement for MSVC x86 builds because some third-party
     # libraries (e.g., prebuilt FFmpeg) may not be SAFESEH-aware. This avoids LNK2026.
     if(MSVC AND CMAKE_SIZEOF_VOID_P EQUAL 4)

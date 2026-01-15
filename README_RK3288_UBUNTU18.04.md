@@ -161,7 +161,7 @@ sudo vim /etc/profile
 ```bash
 # ==================== 版本要求 Qt 5.9 以上 ====================
 # 设置 Qt 根目录（根据实际安装路径修改）
-export QTDIR=/opt/Qt/5.9.9_armhf
+export QTDIR=/opt/Qt/5.15.14_armhf
 
 # 添加 Qt 工具链到 PATH
 export PATH=$QTDIR/bin:$PATH
@@ -193,17 +193,16 @@ cmake --version
 
 ---
 
-## 五、安装 Qt 5.9.9（ARMv7/ARM HF）
+## 五、安装 Qt 5.15.14（ARMv7/ARM HF）
 
 ### 5.1 获取 Qt for ARM
 
-Qt 5.9.9 for ARM 可以通过以下方式获取：
+Qt 5.15.14 for ARM 可以通过以下方式获取：
 
 - **选项 A：** 使用厂商提供的 Qt for RK3288
-- **选项 B：** 从 [Qt 官方](https://download.qt.io/archive/qt/) 下载源码自行编译
-- **选项 C：** 使用社区提供的 ARM 预编译包
+- **选项 B：** 使用社区提供的 ARM 预编译包
 
-将 Qt 安装/解压到 `/opt/Qt/5.9.9_armhf/` 目录。
+将 Qt 安装/解压到 `/opt/Qt/5.15.14_armhf/` 目录。
 
 ### 5.2 验证 Qt 安装
 
@@ -326,7 +325,7 @@ cd out/build/arm-linux
 
 2. 显式指定 Qt 路径：
    ```bash
-   cmake --preset arm-linux -DCMAKE_PREFIX_PATH=/opt/Qt/5.9.9_armhf
+   cmake --preset arm-linux -DCMAKE_PREFIX_PATH=/opt/Qt/5.15.14_armhf
    ```
 
 ### 9.3 OpenSSL 版本不兼容

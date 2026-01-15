@@ -1,6 +1,11 @@
 # AiRanDesk
 
-AiRanDesk 是一个基于 WebRTC 技术的远程桌面控制应用程序，支持 Windows 7 以上 和 Linux （g++ >= 10版本） 平台。
+AiRanDesk 是一个基于 WebRTC 技术的远程桌面控制应用程序，支持 Windows 7 以上 和 Linux （g++ >= 10 版本） 平台。
+
+## 注：
+
+- 32 位支持 win7 及以上
+- 64 位支持 win10 及以上
 
 ## 功能特性
 
@@ -11,6 +16,7 @@ AiRanDesk 是一个基于 WebRTC 技术的远程桌面控制应用程序，支�
 - 低延迟的音视频编解码
 
 ## 界面
+
 ![启动界面](images/main_window.png)
 ![控制界面](images/control_window.png)
 
@@ -27,7 +33,7 @@ AiRanDesk 是一个基于 WebRTC 技术的远程桌面控制应用程序，支�
 - **[libdatachannel](https://github.com/paullouisageneau/libdatachannel)** - WebRTC 数据通道实现
 - **[spdlog](https://github.com/gabime/spdlog)** - 快速 C++ 日志库
 - **[ffmpeg](https://github.com/FFmpeg/FFmpeg)** - 多媒体框架，用于音视频编解码
-- **[FFmpeg-Builds](https://github.com/BtbN/FFmpeg-Builds.git) ** - 打包完成的ffmpeg库
+- **[FFmpeg-Builds](https://github.com/BtbN/FFmpeg-Builds.git) ** - 打包完成的 ffmpeg 库
 
 ## 构建指南
 
@@ -36,14 +42,16 @@ AiRanDesk 是一个基于 WebRTC 技术的远程桌面控制应用程序，支�
 #### 前置要求
 
 1. **安装开发工具**
-   - Visual Studio 2017 以上版本（需要 C++ 桌面开发工作负载，建议Visual Studio 2022）
-   - CMake 3.16 或更高版本（建议 3.31版本）
+
+   - Visual Studio 2019 以上版本
+   - CMake 3.16 或更高版本（建议 3.31 版本）
    - Git
 
 2. **安装 Qt5**
-   - 下载并安装 Qt 5.9 以上版本（建议使用 Qt 官方在线安装器）
-   - 选择 MSVC 2022 32-bit 或 64-bit 组件（根据需要选择）
-   - 记录 Qt 安装路径，例如：`C:/Qt/Qt5.9.9/5.9.9/msvc2015` 或 `C:/Qt/Qt5.9.9/5.9.9/msvc2015_64`
+
+   - 下载并安装 Qt 5.15.2 以上版本（建议使用 Qt 官方在线安装器）
+   - 选择 MSVC 2019 32-bit 或 64-bit 组件（根据需要选择）
+   - 记录 Qt 安装路径，例如：`C:/Qt/5.15.2/msvc2019` 或 `C:/Qt/5.15.2/msvc2019_64`
 
 3. **克隆代码并初始化子模块**
    ```cmd
@@ -55,8 +63,9 @@ AiRanDesk 是一个基于 WebRTC 技术的远程桌面控制应用程序，支�
 #### 安装依赖
 
 1. **OpenSSL 1.1.1w**
-   - 下载并安装 [Win32OpenSSL-1_1_1w.exe](https://wiki.overbyte.eu/arch/openssl-1.1.1w-win32.zip)（32位）
-   - 下载并安装 [Win64OpenSSL-1_1_1w.exe](https://wiki.overbyte.eu/arch/openssl-1.1.1w-win64.zip)（64位）
+
+   - 下载并安装 [Win32OpenSSL-1_1_1w.exe](https://wiki.overbyte.eu/arch/openssl-1.1.1w-win32.zip)（32 位）
+   - 下载并安装 [Win64OpenSSL-1_1_1w.exe](https://wiki.overbyte.eu/arch/openssl-1.1.1w-win64.zip)（64 位）
    - 默认安装路径：`C:/Program Files/OpenSSL-Win32` 和 `C:/Program Files/OpenSSL-Win64`
 
 2. **FFmpeg 预编译库**
@@ -68,44 +77,54 @@ AiRanDesk 是一个基于 WebRTC 技术的远程桌面控制应用程序，支�
 
 ```json
 {
-  "name": "x86-windows-msvc",
+  "name": "win7-x86-msvc",
+  "displayName": "win7-x86-msvc",
+  "generator": "Visual Studio 16 2019",
+  "architecture": "win32",
+  "toolset": "host=x86",
   "cacheVariables": {
-    "QT5_DIR": "C:/Qt/Qt5.9.9/5.9.9/msvc2015",
+    "QT5_DIR": "C:/Qt/5.15.2/msvc2019",
     "OPENSSL_ROOT_DIR": "C:/Program Files (x86)/OpenSSL-Win32",
-    "FFMPEG_ROOT_DIR": "${sourceDir}/../ffmpeg/ffmpeg-n7.1-latest-win32-gpl-shared-7.1"
+    "FFMPEG_ROOT_DIR": "D:/lib/ffmpeg/ffmpeg-n7.1-latest-win32-gpl-shared-7.1"
   }
 }
 ```
 
 或者使用 64 位配置：
+
 ```json
 {
-  "name": "x64-windows-msvc",
+  "name": "win10-x64-msvc",
+  "displayName": "win10-x64-msvc",
+  "generator": "Visual Studio 16 2019",
+  "architecture": "x64",
+  "toolset": "host=x64",
   "cacheVariables": {
-    "QT5_DIR": "C:/Qt/Qt5.9.9/5.9.9/msvc2015_64",
+    "QT5_DIR": "C:/Qt/5.15.2/msvc2019_64",
     "OPENSSL_ROOT_DIR": "C:/Program Files/OpenSSL-Win64",
-    "FFMPEG_ROOT_DIR": "${sourceDir}/../ffmpeg/ffmpeg-n7.1-latest-win64-gpl-shared-7.1"
+    "FFMPEG_ROOT_DIR": "D:/lib/ffmpeg/ffmpeg-n7.1-latest-win64-gpl-shared-7.1"
   }
 }
 ```
 
-#### 编译（32位）
+#### 编译（32 位）
 
 ```cmd
-cmake --preset x86-windows-msvc
-cmake --build --preset x86-windows-msvc --config Release
+cmake --preset win7-x86-msvc
+cmake --build --preset win7-x86-msvc --config Release
 ```
 
-#### 编译（64位）
+#### 编译（64 位）
 
 ```cmd
-cmake --preset x64-windows-msvc
-cmake --build --preset x64-windows-msvc --config Release
+cmake --preset win10-x64-msvc
+cmake --build --preset win10-x64-msvc --config Release
 ```
 
 编译完成后，可执行文件位于：
-- 32位：`out/build/x86-windows-msvc/release/AiRanDesk.exe`
-- 64位：`out/build/x64-windows-msvc/release/AiRanDesk.exe`
+
+- 32 位：`out/build/win7-x86-msvc/release/AiRanDesk.exe`
+- 64 位：`out/build/win10-x64-msvc/release/AiRanDesk.exe`
 
 所有必需的 DLL（Qt、FFmpeg、OpenSSL、spdlog、datachannel）会自动复制到可执行文件目录。
 
@@ -114,11 +133,12 @@ cmake --build --preset x64-windows-msvc --config Release
 #### 前置要求
 
 1. **安装开发工具**
+
    ```bash
    # Ubuntu/Debian
    sudo apt update
    sudo apt install build-essential cmake git pkg-config
-   
+
    # CentOS/RHEL
    sudo yum update
    sudo yum install gcc gcc-c++ cmake git pkg-config
@@ -135,6 +155,7 @@ cmake --build --preset x64-windows-msvc --config Release
 
 **Ubuntu/Debian**
 **Ubuntu/Debian**
+
 ```bash
 sudo apt update
 sudo apt install \
@@ -154,6 +175,7 @@ sudo apt install \
 ```
 
 **CentOS/RHEL**
+
 ```bash
 sudo yum update
 sudo yum install \
@@ -168,6 +190,7 @@ sudo yum install \
 ```
 
 **Arch Linux**
+
 ```bash
 sudo pacman -S \
     qt5-base \
@@ -180,7 +203,7 @@ sudo pacman -S \
     libxtst
 ```
 
-#### 编译（64位）
+#### 编译（64 位）
 
 ```bash
 # 配置项目
@@ -281,14 +304,17 @@ wsUrl=wss://your-signal-server.com/ws
 ### Windows 常见问题
 
 1. **找不到 Qt 模块**
+
    - 确保在 `CMakePresets.json` 中正确设置了 `CMAKE_PREFIX_PATH`
    - 检查 Qt 安装路径是否正确
 
 2. **缺少 DLL 文件**
+
    - 所有依赖的 DLL 应该在编译后自动复制到输出目录
    - 如果仍然缺少，请检查 CMakeLists.txt 中的 POST_BUILD 拷贝命令是否正确执行
 
 3. **0xc000007b 错误（架构不匹配）**
+
    - 确保所有 DLL（Qt、FFmpeg、OpenSSL）都是相同架构（全部 x86 或全部 x64）
    - 检查 CMakePresets.json 中的架构设置
 
@@ -299,6 +325,7 @@ wsUrl=wss://your-signal-server.com/ws
 ### Linux 常见问题
 
 1. **找不到 Qt5 模块**
+
    ```bash
    # 检查是否安装了所有必需的 Qt5 开发包
    dpkg -l | grep qt5  # Ubuntu/Debian
@@ -306,6 +333,7 @@ wsUrl=wss://your-signal-server.com/ws
    ```
 
 2. **找不到 FFmpeg 库**
+
    ```bash
    # 检查 FFmpeg 开发包是否安装
    pkg-config --modversion libavcodec
@@ -323,11 +351,13 @@ wsUrl=wss://your-signal-server.com/ws
 如果遇到奇怪的配置或编译问题，尝试清理构建缓存：
 
 **Windows:**
+
 ```cmd
 rmdir /s /q out\build
 ```
 
 **Linux:**
+
 ```bash
 rm -rf out/build
 ```

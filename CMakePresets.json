@@ -6,101 +6,71 @@
   },
   "configurePresets": [
     {
-      "name": "x64-win10-msvc",
-      "displayName": "x64-win10-msvc",
-      "generator": "Visual Studio 17 2022",
+      "name": "win10-x64-msvc",
+      "displayName": "win10-x64-msvc",
+      "generator": "Visual Studio 16 2019",
       "architecture": "x64",
       "toolset": "host=x64",
       "cacheVariables": {
         "QT5_DIR": "C:/Qt/5.15.2/msvc2019_64",
         "OPENSSL_ROOT_DIR": "C:/Program Files/OpenSSL-Win64",
-        "FFMPEG_ROOT_DIR": "D:/lib/ffmpeg/ffmpeg-n7.1-latest-win64-nonfree-shared-7.1"
+        "FFMPEG_ROOT_DIR": "D:/lib/ffmpeg/ffmpeg-n7.1-latest-win64-gpl-shared-7.1"
       }
     },
     {
-      "name": "x86-win10-msvc",
-      "displayName": "x86-win10-msvc",
-      "generator": "Visual Studio 17 2022",
+      "name": "win7-x86-msvc",
+      "displayName": "win7-x86-msvc",
+      "generator": "Visual Studio 16 2019",
       "architecture": "win32",
       "toolset": "host=x86",
       "cacheVariables": {
         "QT5_DIR": "C:/Qt/5.15.2/msvc2019",
         "OPENSSL_ROOT_DIR": "C:/Program Files (x86)/OpenSSL-Win32",
-        "FFMPEG_ROOT_DIR": "D:/lib/ffmpeg/ffmpeg-n7.1-latest-win32-nonfree-shared-7.1"
+        "FFMPEG_ROOT_DIR": "D:/lib/ffmpeg/ffmpeg-n7.1-latest-win32-gpl-shared-7.1"
       }
     },
     {
-      "name": "x64-win7-msvc",
-      "displayName": "x64-win7-msvc",
-      "generator": "Visual Studio 17 2022",
-      "architecture": "x64",
-      "toolset": "host=x64",
+      "name": "linux-x64",
+      "displayName": "linux-x64",
+      "generator": "Ninja",
+      "binaryDir": "${sourceDir}/out/build/arm-linux",
       "cacheVariables": {
-        "QT5_DIR": "C:/Qt/Qt5.9.9/5.9.9/msvc2015_64",
-        "OPENSSL_ROOT_DIR": "C:/Program Files/OpenSSL-Win64",
-        "FFMPEG_ROOT_DIR": "D:/lib/ffmpeg/ffmpeg-n4.4-latest-win64-nonfree-shared-4.4"
+        "QT5_DIR": "/opt/Qt/5.15.2",
+        "CMAKE_PREFIX_PATH": "/opt/Qt/5.15.2"
       }
     },
     {
-      "name": "x86-win7-msvc",
-      "displayName": "x86-win7-msvc",
-      "generator": "Visual Studio 17 2022",
-      "architecture": "win32",
-      "toolset": "host=x86",
-      "cacheVariables": {
-        "QT5_DIR": "C:/Qt/Qt5.9.9/5.9.9/msvc2015",
-        "OPENSSL_ROOT_DIR": "C:/Program Files (x86)/OpenSSL-Win32",
-        "FFMPEG_ROOT_DIR": "D:/lib/ffmpeg/ffmpeg/ffmpeg-n4.4-latest-win32-nonfree-shared-4.4"
-      }
-    },
-    {
-      "name": "x64-linux",
-      "displayName": "x64-linux",
-      "generator": "Ninja"
-    },
-    {
-      "name": "arm-linux",
-      "displayName": "arm-linux (ARMv7)",
+      "name": "linux-arm",
+      "displayName": "linux-arm (ARMv7)",
       "generator": "Unix Makefiles",
       "binaryDir": "${sourceDir}/out/build/arm-linux",
       "cacheVariables": {
-        "QT5_DIR": "/opt/Qt/5.9.9_armhf",
-        "CMAKE_PREFIX_PATH": "/opt/Qt/5.9.9_armhf",
+        "QT5_DIR": "/opt/Qt/5.15.14_armhf",
+        "CMAKE_PREFIX_PATH": "/opt/Qt/5.15.14_armhf",
         "CMAKE_C_COMPILER": "gcc",
         "CMAKE_CXX_COMPILER": "g++"
       }
     }
-
   ],
   "buildPresets": [
     {
-      "name": "x64-win10-msvc",
-      "configurePreset": "x64-win10-msvc",
+      "name": "win10-x64-msvc",
+      "configurePreset": "win10-x64-msvc",
       "configuration": "Release"
     },
     {
-      "name": "x86-win10-msvc",
-      "configurePreset": "x86-win10-msvc",
+      "name": "win7-x86-msvc",
+      "configurePreset": "win7-x86-msvc",
       "configuration": "Release"
     },
     {
-      "name": "x64-win7-msvc",
-      "configurePreset": "x64-win7-msvc",
+      "name": "linux-x64",
+      "configurePreset": "linux-x64",
       "configuration": "Release"
     },
     {
-      "name": "x86-win7-msvc",
-      "configurePreset": "x86-win7-msvc",
-      "configuration": "Release"
-    },
-    {
-      "name": "x64-linux",
-      "configurePreset": "x64-linux",
-      "configuration": "Release"
-    },
-    {
-      "name": "arm-linux",
-      "configurePreset": "arm-linux",
+      "name": "linux-arm",
+      "configurePreset": "linux-arm",
       "configuration": "Release"
     }
   ]
