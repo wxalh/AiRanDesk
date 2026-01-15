@@ -96,7 +96,10 @@ void CaptureWorker::startCapture(int width, int height, int fps)
 
     // 计算定时器间隔
     int interval = 1000 / fps; // ms
-    m_captureTimer->start(interval);
+    if (m_captureTimer && !m_captureTimer->isActive())
+    {
+        m_captureTimer->start(interval);
+    }
 
     emit captureStarted();
     LOG_INFO("CaptureWorker started: {}x{} @ {}fps", width, height, fps);
@@ -107,7 +110,7 @@ void CaptureWorker::stopCapture()
     QMutexLocker locker(&m_mutex);
     m_running = false;
 
-    if (m_captureTimer)
+    if (m_captureTimer && m_captureTimer->isActive())
     {
         m_captureTimer->stop();
     }
