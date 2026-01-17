@@ -51,7 +51,7 @@ private:
 
   // Annex-B 兼容：把可能是 AVCC/长度前缀 的 H264 输出统一转为 Annex-B（起始码 0x00000001）
   bool initAnnexBBsf();
-  rtc::binary packetToAnnexBBinary(const AVPacket *packet);
+  rtc::binary packetToAnnexBBinary(const AVPacket *packet, bool forcePrependExtradata = false);
 
   // 兜底：当关键帧里缺 SPS/PPS 时，从编码器 extradata 生成 Annex-B 并前置
   rtc::binary getAnnexBExtradata() const;
@@ -85,6 +85,10 @@ private:
 
   bool m_initialized;
   bool m_forceKeyFrame;
+
+  // SwsContext 输入尺寸缓存（避免使用 static 导致多实例互相污染）
+  int m_lastSwsInputWidth = -1;
+  int m_lastSwsInputHeight = -1;
 };
 
 #endif // H264_ENCODER_H

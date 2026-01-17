@@ -930,20 +930,51 @@ void WebRtcCtl::processVideoFrame(const rtc::binary &data, const rtc::FrameInfo 
         // 解码H264数据为QImage
         if (m_h264Decoder)
         {
-            // 检查解码器是否在等待关键帧
-            if (m_h264Decoder->isWaitingForKeyFrame() && !m_waitingForKeyFrame)
+            // 解码器等待关键帧时：周期性请求关键帧（避免只触发一次，后续一直等不到 IDR）
+            if (m_h264Decoder->isWaitingForKeyFrame())
             {
-                LOG_WARN("⚠️ Decoder is waiting for key frame, requesting from encoder");
-                requestKeyFrame();
-                m_waitingForKeyFrame = true;
+                static auto lastKeyframeRequestTime = std::chrono::steady_clock::now() - std::chrono::seconds(10);
+                const auto now = std::chrono::steady_clock::now();
+                const auto gapMs = std::chrono::duration_cast<std::chrono::milliseconds>(now - lastKeyframeRequestTime).count();
+
+                // 这里用节流避免刷屏/打爆信令；可按需调小/调大
+                const int kRequestIntervalMs = 500;
+                if (gapMs >= kRequestIntervalMs)
+                {
+                    LOG_WARN("⚠️ Decoder is waiting for key frame (waitFlag={}, gapMs={}), requesting...", m_waitingForKeyFrame, (int)gapMs);
+
+                    // 1) 业务信令请求（datachannel）
+                    requestKeyFrame();
+
+                    // 2) WebRTC 原生 RTCP PLI/FIR 请求
+                    if (m_videoTrack)
+                    {
+                        try
+                        {
+                            LOG_DEBUG("Calling videoTrack->requestKeyframe()...");
+                            bool ok = m_videoTrack->requestKeyframe();
+                            LOG_INFO("Requested keyframe via videoTrack (RTCP PLI/FIR), ok={}", ok);
+                        }
+                        catch (const std::exception &e)
+                        {
+                            LOG_WARN("Failed to request keyframe via videoTrack: {}", e.what());
+                        }
+                    }
+                    else
+                    {
+                        LOG_DEBUG("videoTrack is null, skip requestKeyframe");
+                    }
+
+                    lastKeyframeRequestTime = now;
+                    m_waitingForKeyFrame = true;
+                }
             }
-            
+
             QImage decodedFrame = m_h264Decoder->decodeFrame(data);
             if (!decodedFrame.isNull())
             {
-                // 发射信号显示解码后的图像
                 emit videoFrameDecoded(decodedFrame);
-                m_waitingForKeyFrame = false; // 成功解码，重置等待标志
+                m_waitingForKeyFrame = false;
                 LOG_DEBUG("Successfully decoded video frame: {}x{}", decodedFrame.width(), decodedFrame.height());
             }
             else

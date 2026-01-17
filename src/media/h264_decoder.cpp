@@ -3,7 +3,9 @@
 #include <QDebug>
 #include <QMap>
 #include <QMutex>
-
+extern "C" {
+#include <libavcodec/bsf.h>
+}
 // 硬件设备上下文管理器 - 单例模式，避免重复创建硬件上下文
 class HardwareContextManager
 {
@@ -401,29 +403,91 @@ QImage H264Decoder::decodeFrame(const rtc::binary& h264Data)
         return QImage();
     }
 
-    // 设置数据包
-    m_packet->data = const_cast<uint8_t*>(reinterpret_cast<const uint8_t*>(h264Data.data()));
-    m_packet->size = static_cast<int>(h264Data.size());
+    // --- NEW: 兜底把 AVCC/长度前缀 转 Annex-B（起始码） ---
+    // WebRTC packetizer 侧按 StartSequence 切 NAL，如果某些端输出变成 AVCC，会导致软解更容易花屏。
+    // 这里做一次自适应转换：
+    auto seemsAnnexB = [&](const rtc::binary& d) -> bool {
+        if (d.size() < 4) return false;
+        const uint8_t b0 = static_cast<uint8_t>(d[0]);
+        const uint8_t b1 = static_cast<uint8_t>(d[1]);
+        const uint8_t b2 = static_cast<uint8_t>(d[2]);
+        const uint8_t b3 = static_cast<uint8_t>(d[3]);
+        return (b0 == 0x00 && b1 == 0x00 && ((b2 == 0x01) || (b2 == 0x00 && b3 == 0x01)));
+    };
 
-    // 检查是否是关键帧（包含 SPS/PPS/IDR）
-    // 兼容：Annex-B 起始码可能是 0x00000001（4字节）或 0x000001（3字节）
+    rtc::binary annexb = h264Data;
+    if (!seemsAnnexB(h264Data))
+    {
+        const AVBitStreamFilter* bsf = av_bsf_get_by_name("h264_mp4toannexb");
+        if (bsf)
+        {
+            AVBSFContext* ctx = nullptr;
+            if (av_bsf_alloc(bsf, &ctx) >= 0 && ctx)
+            {
+                // 使用 decoder 的 codec 参数作为输入参数（即使不完美，通常也足以完成 length->startcode 转换）
+                if (m_codecContext)
+                {
+                    (void)avcodec_parameters_from_context(ctx->par_in, m_codecContext);
+                    ctx->time_base_in = m_codecContext->time_base;
+                }
+
+                if (av_bsf_init(ctx) >= 0)
+                {
+                    AVPacket* in = av_packet_alloc();
+                    if (in)
+                    {
+                        in->data = const_cast<uint8_t*>(reinterpret_cast<const uint8_t*>(h264Data.data()));
+                        in->size = static_cast<int>(h264Data.size());
+
+                        if (av_bsf_send_packet(ctx, in) >= 0)
+                        {
+                            AVPacket* out = av_packet_alloc();
+                            if (out)
+                            {
+                                if (av_bsf_receive_packet(ctx, out) >= 0 && out->size > 0)
+                                {
+                                    annexb.resize(static_cast<size_t>(out->size));
+                                    memcpy(annexb.data(), out->data, static_cast<size_t>(out->size));
+                                }
+                                av_packet_free(&out);
+                            }
+                        }
+                        av_packet_free(&in);
+                    }
+                }
+
+                av_bsf_free(&ctx);
+            }
+        }
+    }
+
+    // 设置数据包（使用 annexb）
+    m_packet->data = const_cast<uint8_t*>(reinterpret_cast<const uint8_t*>(annexb.data()));
+    m_packet->size = static_cast<int>(annexb.size());
+
+    // --- existing keyframe detection logic continues, but use annexb ---
     bool isKeyFrame = false;
-    if (h264Data.size() >= 5) {
+    bool hasIdr = false;
+    bool hasSpsPps = false;
+    bool hasSps = false;
+    bool hasPps = false;
+
+    if (annexb.size() >= 5) {
         auto isStartCode4 = [&](size_t i) -> bool {
-            return i + 3 < h264Data.size() &&
-                   static_cast<uint8_t>(h264Data[i]) == 0x00 &&
-                   static_cast<uint8_t>(h264Data[i+1]) == 0x00 &&
-                   static_cast<uint8_t>(h264Data[i+2]) == 0x00 &&
-                   static_cast<uint8_t>(h264Data[i+3]) == 0x01;
+            return i + 3 < annexb.size() &&
+                   static_cast<uint8_t>(annexb[i]) == 0x00 &&
+                   static_cast<uint8_t>(annexb[i+1]) == 0x00 &&
+                   static_cast<uint8_t>(annexb[i+2]) == 0x00 &&
+                   static_cast<uint8_t>(annexb[i+3]) == 0x01;
         };
         auto isStartCode3 = [&](size_t i) -> bool {
-            return i + 2 < h264Data.size() &&
-                   static_cast<uint8_t>(h264Data[i]) == 0x00 &&
-                   static_cast<uint8_t>(h264Data[i+1]) == 0x00 &&
-                   static_cast<uint8_t>(h264Data[i+2]) == 0x01;
+            return i + 2 < annexb.size() &&
+                   static_cast<uint8_t>(annexb[i]) == 0x00 &&
+                   static_cast<uint8_t>(annexb[i+1]) == 0x00 &&
+                   static_cast<uint8_t>(annexb[i+2]) == 0x01;
         };
 
-        for (size_t i = 0; i + 4 < h264Data.size(); ++i) {
+        for (size_t i = 0; i + 4 < annexb.size(); ++i) {
             size_t nalOffset = 0;
             if (isStartCode4(i)) {
                 nalOffset = i + 4;
@@ -433,25 +497,60 @@ QImage H264Decoder::decodeFrame(const rtc::binary& h264Data)
                 continue;
             }
 
-            if (nalOffset >= h264Data.size()) {
-                continue;
-            }
+            if (nalOffset >= annexb.size()) continue;
 
-            uint8_t nalType = static_cast<uint8_t>(h264Data[nalOffset]) & 0x1F;
-            // NAL类型：7=SPS, 8=PPS, 5=IDR
-            if (nalType == 7 || nalType == 8 || nalType == 5) {
-                isKeyFrame = true;
-                if (m_waitingForKeyFrame) {
-                    LOG_INFO("🔑 Received key frame (NAL type: {}), resuming decoding", nalType);
-                    m_waitingForKeyFrame = false;
-                    m_consecutiveErrors = 0;
-                }
-                break;
-            }
+            uint8_t nalType = static_cast<uint8_t>(annexb[nalOffset]) & 0x1F;
+            if (nalType == 5) hasIdr = true;
+            if (nalType == 7) hasSps = true;
+            if (nalType == 8) hasPps = true;
+            if (hasSps && hasPps) hasSpsPps = true;
+        }
+
+        // 等待关键帧时更严格：优先等 IDR 或 SPS/PPS（防止拿 P 帧去解导致马赛克持续）
+        isKeyFrame = hasIdr || hasSpsPps;
+        if (isKeyFrame && m_waitingForKeyFrame) {
+            LOG_INFO("Received keyframe-related AU (idr={}, spspps={}), resuming decoding", hasIdr, hasSpsPps);
+            m_waitingForKeyFrame = false;
+            m_consecutiveErrors = 0;
         }
     }
 
-    // 如果正在等待关键帧且当前帧不是关键帧，则跳过
+    // --- NEW: 花屏常见场景（丢包/参考链断），解码仍会“成功出帧”但画面已坏。
+    // 这里做一个轻量自愈：
+    // - 如果持续较长时间都没见到 SPS/PPS（参数集）
+    // - 并且出现了 IDR 但它又没带 SPS/PPS（很多硬编器默认不 repeat headers）
+    // 则主动 flush 并强制进入 waitingKeyFrame，驱动上层去请求一个“带参数集的关键帧”。
+    static int framesSinceParamSets = 0;
+    static int idrWithoutParamSetsCount = 0;
+
+    if (hasSpsPps) {
+        framesSinceParamSets = 0;
+        idrWithoutParamSetsCount = 0;
+    } else {
+        // 注意：这里的 frame 计数基于 decodeFrame 调用次数（近似即可）
+        framesSinceParamSets++;
+        if (hasIdr && !hasSpsPps) {
+            idrWithoutParamSetsCount++;
+        }
+    }
+
+    // 触发阈值：约 3 秒（按 30fps 估算）无 SPS/PPS，并且期间遇到过“无参数集 IDR”
+    // 这类情况很容易出现“持续花屏但解码一直成功”的假象。
+    const int kNoParamSetsFrameThreshold = 90;
+    if (!m_waitingForKeyFrame && framesSinceParamSets >= kNoParamSetsFrameThreshold && idrWithoutParamSetsCount >= 1)
+    {
+        LOG_WARN("⚠️ Suspected corrupted reference chain (no SPS/PPS for ~{} frames, idrWithoutParamSetsCount={}), forcing keyframe recovery",
+                 framesSinceParamSets, idrWithoutParamSetsCount);
+        m_waitingForKeyFrame = true;
+        m_consecutiveErrors = 0;
+        if (m_codecContext) {
+            avcodec_flush_buffers(m_codecContext);
+        }
+        // 进入 waitingKeyFrame 后，本帧直接丢弃，等待下一帧带参数集/IDR 来恢复
+        av_packet_unref(m_packet);
+        return QImage();
+    }
+
     if (m_waitingForKeyFrame && !isKeyFrame) {
         LOG_DEBUG("Skipping non-key frame while waiting for key frame");
         av_packet_unref(m_packet);

@@ -1257,8 +1257,9 @@ void WebRtcCli::calculateOptimalResolution(int controlMaxWidth, int controlMaxHe
 
     // 确保编码分辨率按 16 对齐（MF/QSV/NVENC 等硬编更容易接受；同时仍满足 H264 偶数要求）
     // 向上取整到 16 的倍数： (x + 15) & ~15
-    m_encode_width = (m_encode_width + 15) & ~15;
-    m_encode_height = (m_encode_height + 15) & ~15;
+    // 向下取整到 16 的倍数： x & ~15
+    m_encode_width = m_encode_width & ~15;
+    m_encode_height = m_encode_height & ~15;
 
     LOG_INFO("Final encoding resolution (16-aligned): {}x{}", m_encode_width, m_encode_height);
 }

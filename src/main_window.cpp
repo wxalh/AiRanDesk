@@ -284,7 +284,7 @@ void MainWindow::onWsCliRecvBinaryMsg(const QByteArray &message)
             LOG_ERROR("Missing receiver password in CONNECT message");
             return;
         }
-        int fps = JsonUtil::getInt(object, Constant::KEY_FPS, 15);
+        int fps = JsonUtil::getInt(object, Constant::KEY_FPS, 25);
         bool isOnlyFile = JsonUtil::getBool(object, Constant::KEY_IS_ONLY_FILE, false);
         bool isOnlyRelay = JsonUtil::getBool(object, Constant::KEY_ONLY_RELAY, false);
 
