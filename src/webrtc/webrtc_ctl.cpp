@@ -20,15 +20,13 @@
  * -> on remote ice candidates -> send local ice candidates
  */
 WebRtcCtl::WebRtcCtl(const QString &remoteId, const QString &remotePwdMd5,
-                     bool isOnlyFile, bool adaptiveResolution, bool onlyRelay, QObject *parent)
+                     bool isOnlyFile, bool adaptiveResolution, QObject *parent)
     : QObject(parent),
       m_remoteId(remoteId),
       m_remotePwdMd5(remotePwdMd5),
       m_connected(false),
       m_isOnlyFile(isOnlyFile),
       m_adaptiveResolution(adaptiveResolution),
-      m_onlyRelay(onlyRelay),
-      m_sdpSent(false),
       m_waitingForKeyFrame(true) // 初始时等待关键帧
 {
     // 初始化ICE服务器配置
@@ -86,7 +84,6 @@ void WebRtcCtl::init()
                                               .add(Constant::KEY_RECEIVER_PWD, m_remotePwdMd5)
                                               .add(Constant::KEY_SENDER, ConfigUtil->local_id)
                                               .add(Constant::KEY_IS_ONLY_FILE, m_isOnlyFile)
-                                              .add(Constant::KEY_ONLY_RELAY, m_onlyRelay)
                                               .add(Constant::KEY_FPS, ConfigUtil->fps);
 
     // 如果启用了自适应分辨率，则包含控制端可显示的最大区域信息
@@ -132,16 +129,6 @@ void WebRtcCtl::initPeerConnection()
 
         rtc::IceServer turnTcpServer(m_host, m_port, m_username, m_password, rtc::IceServer::RelayType::TurnTcp);
         config.iceServers.push_back(turnTcpServer);
-
-        if (m_onlyRelay)
-        {
-            // 如果仅使用中继服务器，禁用STUN服务器
-            config.iceServers.clear();
-            config.iceServers.push_back(turnUdpServer);
-            config.iceServers.push_back(turnTcpServer);
-            config.iceTransportPolicy = rtc::TransportPolicy::Relay;
-            LOG_INFO("Using only TURN servers for ICE transport");
-        }
 
         // 创建PeerConnection
         m_peerConnection = std::make_shared<rtc::PeerConnection>(config);
@@ -287,15 +274,6 @@ void WebRtcCtl::setupCallbacks()
             QString message = JsonUtil::toCompactString(answerMsg);
             emit sendWsCliTextMsg(message);
             LOG_INFO("Sent local description ({}) to cli", message);
-            m_sdpSent = true; // 标记已发送SDP
-            if(!m_localCandidates.isEmpty()){
-                foreach(const QString &candidate, m_localCandidates)
-                {
-                    emit sendWsCliTextMsg(candidate);
-                    LOG_DEBUG("Sent local candidate to cli: {}", candidate);
-                }
-                m_localCandidates.clear(); // 清空已发送的候选者
-            }
         }
         catch (const std::exception &e)
         {
@@ -305,27 +283,24 @@ void WebRtcCtl::setupCallbacks()
     // 本地候选者回调
     m_peerConnection->onLocalCandidate([this](const rtc::Candidate &candidate)
                                        {
-        QString candidateStr = QString::fromStdString(std::string(candidate));
-        QString midStr = QString::fromStdString(candidate.mid());
-        
-        // 发送本地候选者给被控端
-        QJsonObject candidateMsg = JsonUtil::createObject()
-            .add(Constant::KEY_ROLE, Constant::ROLE_CTL)
-            .add(Constant::KEY_TYPE, Constant::TYPE_CANDIDATE)
-            .add(Constant::KEY_RECEIVER, m_remoteId)
-            .add(Constant::KEY_SENDER, ConfigUtil->local_id)
-            .add(Constant::KEY_DATA, candidateStr)
-            .add(Constant::KEY_MID, midStr)
-            .build();
-        
-        QString message = JsonUtil::toCompactString(candidateMsg);
-        
-        if(m_sdpSent) {
-            emit sendWsCliTextMsg(message);
-            LOG_DEBUG("Sent local candidate to cli: {}", message);
-        }else{
-            m_localCandidates.append(message);
-        } });
+                                           QString candidateStr = QString::fromStdString(std::string(candidate));
+                                           QString midStr = QString::fromStdString(candidate.mid());
+
+                                           // 发送本地候选者给被控端
+                                           QJsonObject candidateMsg = JsonUtil::createObject()
+                                                                          .add(Constant::KEY_ROLE, Constant::ROLE_CTL)
+                                                                          .add(Constant::KEY_TYPE, Constant::TYPE_CANDIDATE)
+                                                                          .add(Constant::KEY_RECEIVER, m_remoteId)
+                                                                          .add(Constant::KEY_SENDER, ConfigUtil->local_id)
+                                                                          .add(Constant::KEY_DATA, candidateStr)
+                                                                          .add(Constant::KEY_MID, midStr)
+                                                                          .build();
+
+                                           QString message = JsonUtil::toCompactString(candidateMsg);
+
+                                           emit sendWsCliTextMsg(message);
+                                           LOG_DEBUG("Sent local candidate to cli: {}", message);
+                                       });
 
     // 设置轨道回调 - 使用onMessage接收解包后的H264数据
     if (m_videoTrack)
@@ -515,6 +490,7 @@ void WebRtcCtl::parseWsMsg(const QJsonObject &object)
                 LOG_INFO("Setting remote description: {}", type);
                 rtc::Description desc(data.toStdString(), type.toStdString());
                 m_peerConnection->setRemoteDescription(desc);
+                m_peerConnection->createAnswer();
                 LOG_INFO("Remote description set successfully");
             }
             catch (const std::exception &e)
@@ -982,7 +958,7 @@ void WebRtcCtl::processVideoFrame(const rtc::binary &data, const rtc::FrameInfo 
                 // 解码失败处理 - 只在不是等待更多数据时请求关键帧
                 static int consecutiveFailures = 0;
                 consecutiveFailures++;
-                
+
                 if (consecutiveFailures >= 5 && !m_waitingForKeyFrame)
                 {
                     LOG_WARN("⚠️ {} consecutive decode failures, requesting key frame", consecutiveFailures);

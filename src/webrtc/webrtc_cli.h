@@ -42,7 +42,7 @@ class WebRtcCli : public QObject
     Q_OBJECT
 public:
     WebRtcCli(const QString &remoteId, int fps, bool isOnlyFile,
-        int controlMaxWidth = 1920, int controlMaxHeight = 1080, bool isOnlyRelay = false, QObject *parent = nullptr);
+        int controlMaxWidth = 1920, int controlMaxHeight = 1080, QObject *parent = nullptr);
     ~WebRtcCli();
 
     // 解析来自WebSocket的消息
@@ -67,7 +67,6 @@ private:
     // 成员变量
     QString m_remoteId;
     bool m_isOnlyFile; // 是否仅文件传输
-    bool m_onlyRelay; // 是否仅使用中继服务器
     QDir m_currentDir;
 
     // WebRTC相关
@@ -77,11 +76,9 @@ private:
     std::shared_ptr<rtc::DataChannel> m_inputChannel;
     std::shared_ptr<rtc::Track> m_videoTrack;
     std::shared_ptr<rtc::Track> m_audioTrack;
-    QStringList m_localCandidates; // 本地ICE候选列表消息
     // 连接状态
     bool m_connected;
     bool m_channelsReady;
-    bool m_sdpSent;    // 是否发送了本地描述
     bool m_destroying; // 是否正在销毁
 
     int m_fps; // 帧率

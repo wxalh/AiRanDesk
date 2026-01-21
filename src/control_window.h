@@ -25,7 +25,7 @@ class ControlWindow : public QMainWindow
     Q_OBJECT
 public:
     ControlWindow(QString remoteId, QString remotePwdMd5, WsCli *_ws_cli,
-                  bool adaptiveResolution = false, bool onlyRelay = false, QWidget *parent = nullptr);
+                  bool adaptiveResolution = false, QWidget *parent = nullptr);
     ~ControlWindow();
     void initUI();
     void initCLI();
@@ -51,7 +51,6 @@ protected:
 private:
     bool isReceivedImg;      // 是否接收到图片
     bool windowSizeAdjusted; // 标记窗口大小是否已经根据视频调整过
-    bool m_onlyRelay; // 是否仅限中继模式
     QScrollArea scrollArea;
 
     QLabel label;

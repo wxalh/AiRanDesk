@@ -89,8 +89,7 @@ void MainWindow::connDesktopMgr(const QString &remote_id, const QString &remote_
     {
         // 获取自适应分辨率设置
         bool adaptiveResolution = ui->adaptive_resolution->isChecked();
-        bool onlyRelay = ui->only_relay->isChecked();
-        ControlWindow *cw = new ControlWindow(remote_id, remote_pwd_md5, &m_ws, adaptiveResolution, onlyRelay);
+        ControlWindow *cw = new ControlWindow(remote_id, remote_pwd_md5, &m_ws, adaptiveResolution);
         cw->show();
     }
     else
@@ -162,17 +161,22 @@ void MainWindow::onWsCliDisconnected()
 void MainWindow::onWsCliReconnectStatus(const QString &status, int phase, int attempt, int nextDelaySeconds)
 {
     QString displayStatus;
-    if (status == "连接已恢复") {
+    if (status == "连接已恢复")
+    {
         displayStatus = "服务器已连接";
-    } else if (nextDelaySeconds > 0) {
-        displayStatus = QString("服务器断开连接，%1").arg(status);
-    } else {
+    }
+    else if (nextDelaySeconds > 0)
+    {
         displayStatus = QString("服务器断开连接，%1").arg(status);
     }
-    
+    else
+    {
+        displayStatus = QString("服务器断开连接，%1").arg(status);
+    }
+
     ui->ws_connect_status->setText(displayStatus);
-    
-    LOG_INFO("Reconnect status update - Phase: {}, Attempt: {}, Status: {}", 
+
+    LOG_INFO("Reconnect status update - Phase: {}, Attempt: {}, Status: {}",
              phase, attempt, status);
 }
 
@@ -286,7 +290,6 @@ void MainWindow::onWsCliRecvBinaryMsg(const QByteArray &message)
         }
         int fps = JsonUtil::getInt(object, Constant::KEY_FPS, 25);
         bool isOnlyFile = JsonUtil::getBool(object, Constant::KEY_IS_ONLY_FILE, false);
-        bool isOnlyRelay = JsonUtil::getBool(object, Constant::KEY_ONLY_RELAY, false);
 
         // 检查是否包含控制端最大显示区域信息（自适应分辨率）
         int controlMaxWidth = -1; // 默认值-1表示不使用自适应分辨率
@@ -307,7 +310,7 @@ void MainWindow::onWsCliRecvBinaryMsg(const QByteArray &message)
         QThread *m_rtc_cli_thread = new QThread();
         QString senderName = QString("WebRtcCli_%1_%2").arg(sender, isOnlyFile ? "file" : "desktop");
         m_rtc_cli_thread->setObjectName(senderName);
-        WebRtcCli *m_rtc_cli = new WebRtcCli(sender, fps, isOnlyFile, controlMaxWidth, controlMaxHeight, isOnlyRelay);
+        WebRtcCli *m_rtc_cli = new WebRtcCli(sender, fps, isOnlyFile, controlMaxWidth, controlMaxHeight);
 
         connect(&m_ws, &WsCli::onWsCliRecvBinaryMsg, m_rtc_cli, &WebRtcCli::onWsCliRecvBinaryMsg);
         connect(&m_ws, &WsCli::onWsCliRecvTextMsg, m_rtc_cli, &WebRtcCli::onWsCliRecvTextMsg);
@@ -325,8 +328,7 @@ void MainWindow::onWsCliRecvBinaryMsg(const QByteArray &message)
                         m_rtc_cli->disconnect();
                         m_rtc_cli->deleteLater();
                         LOG_INFO("{} scheduled for deletion", senderName);
-                    }
-                }, Qt::QueuedConnection);
+                    } }, Qt::QueuedConnection);
         m_rtc_cli->moveToThread(m_rtc_cli_thread);
         m_rtc_cli_thread->start();
         QMetaObject::invokeMethod(m_rtc_cli, "init", Qt::QueuedConnection);

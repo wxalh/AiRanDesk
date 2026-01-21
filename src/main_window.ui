@@ -154,7 +154,7 @@ color: rgb(131,193,224);</string>
      <string>自适应分辨率</string>
     </property>
     <property name="checked">
-     <bool>false</bool>
+     <bool>true</bool>
     </property>
    </widget>
    <widget class="QPushButton" name="btn_conn">
@@ -569,27 +569,6 @@ padding: 0 8px;
      <string>正在连接服务器...</string>
     </property>
    </widget>
-   <widget class="QCheckBox" name="only_relay">
-    <property name="geometry">
-     <rect>
-      <x>280</x>
-      <y>480</y>
-      <width>121</width>
-      <height>20</height>
-     </rect>
-    </property>
-    <property name="font">
-     <font>
-      <pointsize>11</pointsize>
-     </font>
-    </property>
-    <property name="text">
-     <string>仅服务器中继</string>
-    </property>
-    <property name="checked">
-     <bool>false</bool>
-    </property>
-   </widget>
    <zorder>adaptive_resolution</zorder>
    <zorder>local_pwd_border</zorder>
    <zorder>local_id_border</zorder>
@@ -611,7 +590,6 @@ padding: 0 8px;
    <zorder>local_pwd_change</zorder>
    <zorder>local_share</zorder>
    <zorder>ws_connect_status</zorder>
-   <zorder>only_relay</zorder>
   </widget>
  </widget>
  <tabstops>
@@ -620,7 +598,6 @@ padding: 0 8px;
   <tabstop>remote_desktop</tabstop>
   <tabstop>remote_file</tabstop>
   <tabstop>adaptive_resolution</tabstop>
-  <tabstop>only_relay</tabstop>
   <tabstop>btn_conn</tabstop>
   <tabstop>local_pwd_change</tabstop>
   <tabstop>local_share</tabstop>

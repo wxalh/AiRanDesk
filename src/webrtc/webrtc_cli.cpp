@@ -23,18 +23,16 @@
  * -> on ice candidate -> add ice candidate
  */
 WebRtcCli::WebRtcCli(const QString &remoteId, int fps, bool isOnlyFile,
-                     int controlMaxWidth, int controlMaxHeight, bool isOnlyRelay, QObject *parent)
+                     int controlMaxWidth, int controlMaxHeight, QObject *parent)
     : QObject(parent),
       m_remoteId(remoteId),
       m_isOnlyFile(isOnlyFile), // 默认不是仅文件传输
       m_currentDir(QDir::home()),
       m_connected(false),
       m_channelsReady(false),
-      m_sdpSent(false), // 初始状态未发送本地描述
       m_destroying(false),
       m_fps(fps),
-      m_mediaCapture(nullptr),
-      m_onlyRelay(isOnlyRelay)
+      m_mediaCapture(nullptr)
 {
 
     QScreen *screen = QGuiApplication::primaryScreen();
@@ -104,6 +102,7 @@ void WebRtcCli::init()
     setupCallbacks();
     // 创建轨道和数据通道
     createTracksAndChannels();
+    m_peerConnection->createOffer();
 }
 
 void WebRtcCli::populateLocalFiles()
@@ -165,15 +164,6 @@ void WebRtcCli::initPeerConnection()
         rtc::IceServer turnTcpServer(m_host, m_port, m_username, m_password, rtc::IceServer::RelayType::TurnTcp);
         config.iceServers.push_back(turnTcpServer);
 
-        if (m_onlyRelay)
-        {
-            // 如果仅使用中继服务器，禁用STUN服务器
-            config.iceServers.clear();
-            config.iceServers.push_back(turnUdpServer);
-            config.iceServers.push_back(turnTcpServer);
-            config.iceTransportPolicy = rtc::TransportPolicy::Relay;
-            LOG_INFO("Using only TURN servers for ICE transport");
-        }
         // 创建PeerConnection
         m_peerConnection = std::make_shared<rtc::PeerConnection>(config);
         LOG_INFO("PeerConnection created successfully");
@@ -380,22 +370,12 @@ void WebRtcCli::setupCallbacks()
                     QString message = JsonUtil::toCompactString(offerMsg);
                     emit sendWsCliTextMsg(message);
                     LOG_INFO("Sent local description ({}) to ctl", message);
-                    m_sdpSent=true; // 标记已发送本地描述
-                    if(!m_localCandidates.isEmpty()){
-                        foreach(const QString &candidate, m_localCandidates)
-                        {
-                            emit sendWsCliTextMsg(candidate);
-                            LOG_DEBUG("Sent local candidate to cli: {}", candidate);
-                        }
-                        m_localCandidates.clear(); // 清空已发送的候选者
-                    }
                 } catch (const std::exception &e) {
                 LOG_ERROR("Failed to send local description: {}", e.what());
             } });
     // 本地候选者回调
     m_peerConnection->onLocalCandidate([this](const rtc::Candidate &candidate)
                                        {
-        
         QString candidateStr = QString::fromStdString(std::string(candidate));
         QString midStr = QString::fromStdString(candidate.mid());
         
@@ -411,12 +391,8 @@ void WebRtcCli::setupCallbacks()
         
         QString message = JsonUtil::toCompactString(candidateMsg);
         
-        if(m_sdpSent) {
             emit sendWsCliTextMsg(message);
-            LOG_DEBUG("Sent local candidate to cli: {}", message);
-        }else{
-            m_localCandidates.append(message);
-        } });
+            LOG_DEBUG("Sent local candidate to cli: {}", message); });
 }
 
 void WebRtcCli::setupFileChannelCallbacks()

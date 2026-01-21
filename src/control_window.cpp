@@ -20,11 +20,11 @@
 #include <QVBoxLayout>
 #include <QSettings>
 
-ControlWindow::ControlWindow(QString remoteId, QString remotePwdMd5, WsCli *_ws_cli, 
-    bool adaptiveResolution, bool onlyRelay, QWidget *parent)
+ControlWindow::ControlWindow(QString remoteId, QString remotePwdMd5, WsCli *_ws_cli,
+                             bool adaptiveResolution, QWidget *parent)
     : QMainWindow(parent), isReceivedImg(false), windowSizeAdjusted(false),
-      remote_id(remoteId), remote_pwd_md5(remotePwdMd5), m_rtc_ctl(remoteId, remotePwdMd5, false, adaptiveResolution,m_onlyRelay), m_ws(_ws_cli),
-      m_adaptiveResolution(adaptiveResolution), m_onlyRelay(onlyRelay), m_floatingToolbar(nullptr), m_draggingToolbar(false)
+      remote_id(remoteId), remote_pwd_md5(remotePwdMd5), m_rtc_ctl(remoteId, remotePwdMd5, false, adaptiveResolution), m_ws(_ws_cli),
+      m_adaptiveResolution(adaptiveResolution), m_floatingToolbar(nullptr), m_draggingToolbar(false)
 {
     initUI();
     initCLI();
@@ -36,31 +36,35 @@ ControlWindow::ControlWindow(QString remoteId, QString remotePwdMd5, WsCli *_ws_
 ControlWindow::~ControlWindow()
 {
     LOG_DEBUG("ControlWindow destructor started");
-    
+
     // 首先断开所有信号连接
     disconnect();
-    
+
     // 清理浮动工具栏及其按钮
-    if (m_floatingToolbar) {
+    if (m_floatingToolbar)
+    {
         // 断开按钮信号连接
-        if (m_screenshotBtn) {
+        if (m_screenshotBtn)
+        {
             disconnect(m_screenshotBtn, nullptr, nullptr, nullptr);
         }
-        if (m_fileTransferBtn) {
+        if (m_fileTransferBtn)
+        {
             disconnect(m_fileTransferBtn, nullptr, nullptr, nullptr);
         }
-        if (m_ocrBtn) {
+        if (m_ocrBtn)
+        {
             disconnect(m_ocrBtn, nullptr, nullptr, nullptr);
         }
-        
+
         m_floatingToolbar->hide();
         m_floatingToolbar->deleteLater();
         m_floatingToolbar = nullptr;
     }
-    
+
     // 停止并清理WebRTC控制线程
     STOP_OBJ_THREAD(m_rtc_ctl_thread);
-    
+
     LOG_DEBUG("ControlWindow destructor finished");
 }
 
