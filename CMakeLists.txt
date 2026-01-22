@@ -1,10 +1,10 @@
 cmake_minimum_required(VERSION 3.16)
 
-project(AiRanDesk VERSION 3.0 LANGUAGES CXX)
+project(AiRanDesk LANGUAGES CXX)
 
 if(MSVC)
     add_definitions(-DUNICODE -D_UNICODE)
-    add_compile_options(/utf-8 /wd4819 /wd5105)
+    add_compile_options(/utf-8 /wd4819 /wd4319 /wd5105)
 endif()
 
 set(CMAKE_CXX_STANDARD 17)

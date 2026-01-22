@@ -67,7 +67,6 @@ private:
     // 媒体数据处理
     void processVideoFrame(const rtc::binary &videoData, const rtc::FrameInfo &frameInfo);
     void processAudioFrame(const rtc::binary &audioData, const rtc::FrameInfo &frameInfo);
-    void requestKeyFrame(); // 请求关键帧
 
     // 成员变量
     QString m_remoteId;
@@ -103,7 +102,6 @@ private:
     // H264帧重组
     rtc::binary m_h264FrameBuffer; // 累积NAL单元的缓冲区
     QMutex m_h264BufferMutex;      // 保护缓冲区的互斥锁
-    bool m_waitingForKeyFrame;     // 是否等待关键帧
 
 signals:
     // WebSocket消息发送

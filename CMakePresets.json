@@ -8,7 +8,7 @@
     {
       "name": "win10-x64-msvc",
       "displayName": "win10-x64-msvc",
-      "generator": "Visual Studio 16 2019",
+      "generator": "Visual Studio 18 2026",
       "architecture": "x64",
       "toolset": "host=x64",
       "cacheVariables": {
@@ -20,7 +20,7 @@
     {
       "name": "win7-x86-msvc",
       "displayName": "win7-x86-msvc",
-      "generator": "Visual Studio 16 2019",
+      "generator": "Visual Studio 18 2026",
       "architecture": "win32",
       "toolset": "host=x86",
       "cacheVariables": {

@@ -49,9 +49,6 @@ WebRtcCli::WebRtcCli(const QString &remoteId, int fps, bool isOnlyFile,
     m_username = ConfigUtil->ice_username.toStdString();
     m_password = ConfigUtil->ice_password.toStdString();
 
-    // 初始化时间戳
-    m_baseTimestamp = QDateTime::currentMSecsSinceEpoch();
-
     // 初始化文件分包工具类
     m_filePacketUtil = new FilePacketUtil(this);
 
@@ -91,9 +88,6 @@ void WebRtcCli::init()
         m_mediaCapture = new MediaCapture(); // 移除父对象参数
         connect(m_mediaCapture, &MediaCapture::videoFrameReady, this, &WebRtcCli::onVideoFrameReady);
         connect(m_mediaCapture, &MediaCapture::audioFrameReady, this, &WebRtcCli::onAudioFrameReady);
-
-        // 连接关键帧请求信号
-        connect(this, &WebRtcCli::requestKeyFrameFromCapture, m_mediaCapture, &MediaCapture::requestKeyFrame);
     }
 
     // 初始化WebRTC
@@ -680,29 +674,6 @@ void WebRtcCli::parseInputMsg(const QJsonObject &object)
         // 处理键盘事件
         handleKeyboardEvent(object);
     }
-    else if (msgType == Constant::TYPE_KEYFRAME_REQUEST)
-    {
-        // 处理来自控制端的关键帧请求
-        LOG_INFO("🔑 Received key frame request from control side");
-
-        // 通知媒体捕获组件生成关键帧
-        if (m_mediaCapture)
-        {
-            emit requestKeyFrameFromCapture();
-        }
-
-        // 发送响应确认
-        QJsonObject response = JsonUtil::createObject()
-                                   .add(Constant::KEY_MSGTYPE, Constant::TYPE_KEYFRAME_RESPONSE)
-                                   .add(Constant::KEY_SENDER, ConfigUtil->local_id)
-                                   .add(Constant::KEY_RECEIVER, m_remoteId)
-                                   .add("timestamp", QDateTime::currentMSecsSinceEpoch())
-                                   .add("status", "requested")
-                                   .build();
-
-        sendInputChannelMessage(response);
-        LOG_INFO("🔑 Sent key frame response to control side");
-    }
     else
     {
         LOG_WARNING("parseInputMsg: Unknown input message type: {}", msgType);
@@ -803,7 +774,7 @@ void WebRtcCli::stopMediaCapture()
         LOG_ERROR("Failed to stop media capture: {}", e.what());
     }
 }
-void WebRtcCli::onVideoFrameReady(const rtc::binary &frameData)
+void WebRtcCli::onVideoFrameReady(const rtc::binary &frameData, quint64 timestamp_us)
 {
     if (!m_videoTrack || !m_connected)
         return;
@@ -814,51 +785,12 @@ void WebRtcCli::onVideoFrameReady(const rtc::binary &frameData)
         LOG_WARN("Received empty video frame data");
         return;
     }
-
-    // 检查是否为有效的H264数据（应该包含NAL单元起始码）
-    bool hasValidStartCode = false;
-    if (frameData.size() >= 4)
-    {
-        // 检查0x00000001起始码
-        if (frameData[0] == std::byte(0x00) &&
-            frameData[1] == std::byte(0x00) &&
-            frameData[2] == std::byte(0x00) &&
-            frameData[3] == std::byte(0x01))
-        {
-            hasValidStartCode = true;
-        }
-        // 检查0x000001起始码
-        else if (frameData[0] == std::byte(0x00) &&
-                 frameData[1] == std::byte(0x00) &&
-                 frameData[2] == std::byte(0x01))
-        {
-            hasValidStartCode = true;
-        }
-    }
-
-    if (!hasValidStartCode)
-    {
-        LOG_WARN("H264 frame data does not contain valid start code, size: {}", Convert::formatFileSize(frameData.size()));
-        if (frameData.size() >= 8)
-        {
-            LOG_DEBUG("First 8 bytes: {:02x} {:02x} {:02x} {:02x} {:02x} {:02x} {:02x} {:02x}",
-                      static_cast<uint8_t>(frameData[0]), static_cast<uint8_t>(frameData[1]),
-                      static_cast<uint8_t>(frameData[2]), static_cast<uint8_t>(frameData[3]),
-                      static_cast<uint8_t>(frameData[4]), static_cast<uint8_t>(frameData[5]),
-                      static_cast<uint8_t>(frameData[6]), static_cast<uint8_t>(frameData[7]));
-        }
-        return;
-    }
-
+    m_lastTimestamp = timestamp_us;
     try
     {
         // 发送视频帧 - 使用官方示例的方式
         if (m_videoTrack->isOpen())
         {
-            // 计算时间戳（微秒）
-            qint64 currentTime = QDateTime::currentMSecsSinceEpoch();
-            qint64 timestamp_us = (currentTime - m_baseTimestamp) * 1000; // 转为微秒
-
             // 使用chrono duration发送帧
             m_videoTrack->sendFrame(frameData, std::chrono::duration<double, std::micro>(timestamp_us));
             LOG_TRACE("Sent video frame: {}, timestamp: {} us", Convert::formatFileSize(frameData.size()), timestamp_us);
@@ -876,16 +808,14 @@ void WebRtcCli::onAudioFrameReady(const rtc::binary &frameData)
 
     try
     {
-        // 计算时间戳
-        qint64 currentTime = QDateTime::currentMSecsSinceEpoch();
-        qint64 timestamp = currentTime - m_baseTimestamp;
-        rtc::FrameInfo frameInfo(timestamp);
+        // 计算时间戳（微秒）
+        rtc::FrameInfo frameInfo(m_lastTimestamp);
         // 发送音频帧
         if (m_audioTrack->isOpen())
         {
             m_audioTrack->sendFrame(frameData, frameInfo);
             // 记录日志
-            LOG_TRACE("Sent audio frame: {}, timestamp: {}", Convert::formatFileSize(frameData.size()), timestamp);
+            LOG_TRACE("Sent audio frame: {}, timestamp: {}", Convert::formatFileSize(frameData.size()), m_lastTimestamp);
         }
     }
     catch (const std::exception &e)

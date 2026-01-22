@@ -28,17 +28,16 @@ public slots:
   void startCapture(int width, int height, int fps);
   void stopCapture();
   void captureFrame();                       // 定时器触发的捕获函数
-  void forceKeyFrame();                      // 强制生成关键帧
   void setResolution(int width, int height); // 动态设置分辨率
   void setFps(int fps);                      // 动态设置帧率
 
 signals:
-  void frameReady(const rtc::binary &h264Data);
+  void frameReady(const rtc::binary &h264Data, quint64 timestamp_us);
   void captureStarted();
   void captureStopped();
 
 private:
-  rtc::binary captureScreenH264();
+  std::pair<rtc::binary, quint64> captureScreenH264();
   bool m_running;
   int m_width;  // 编码器分辨率
   int m_height; // 编码器分辨率
@@ -48,7 +47,6 @@ private:
   QMutex m_mutex;
   QTimer *m_captureTimer;
   qint64 m_lastFrameTime; // 上一帧发送时间
-  bool m_forceKeyFrame;   // 是否强制生成关键帧
 
   H264Encoder *m_encoder; // H264编码器
 };
@@ -119,11 +117,8 @@ public:
   void stopAudioCapture();
   bool isAudioCapturing() const { return m_isAudioCapturing; }
 
-public slots:
-  void requestKeyFrame(); // 请求生成关键帧
-
 private slots:
-  void onCaptureFrameReady(const rtc::binary &h264Data);
+  void onCaptureFrameReady(const rtc::binary &h264Data, quint64 timestamp_us);
   void onAudioFrameReady(const rtc::binary &audioData);
 
 private:
@@ -141,7 +136,7 @@ private:
   int m_fps;
 
 signals:
-  void videoFrameReady(const rtc::binary &h264Data);
+  void videoFrameReady(const rtc::binary &h264Data, quint64 timestamp_us);
   void audioFrameReady(const rtc::binary &audioData);
 
   // 内部信号，用于线程间通信
@@ -153,7 +148,6 @@ signals:
   void setResolutionSignal(int width,
                            int height); // 内部信号，传递分辨率设置到工作线程
   void setFpsSignal(int fps);           // 内部信号，传递帧率设置到工作线程
-  void requestKeyFrameSignal();         // 内部信号，请求强制生成关键帧
 };
 
 #endif // MEDIA_CAPTURE_H

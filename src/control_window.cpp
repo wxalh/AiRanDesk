@@ -52,10 +52,6 @@ ControlWindow::~ControlWindow()
         {
             disconnect(m_fileTransferBtn, nullptr, nullptr, nullptr);
         }
-        if (m_ocrBtn)
-        {
-            disconnect(m_ocrBtn, nullptr, nullptr, nullptr);
-        }
 
         m_floatingToolbar->hide();
         m_floatingToolbar->deleteLater();
@@ -401,7 +397,7 @@ void ControlWindow::updateImg(const QImage &img)
         static bool warningShown = false;
         if (!warningShown)
         {
-            LOG_ERROR("Video quality appears poor, may need to check network connection or request keyframe");
+            LOG_ERROR("Video quality appears poor, may need to check network connection");
             warningShown = true;
             // 可以在UI上显示警告文字，保持白色文字和黑色背景
             label.setStyleSheet("QLabel { background: black; border: 2px solid red; margin: 0px; padding: 0px; color: white; font-size: 16px; }");
@@ -593,12 +589,6 @@ void ControlWindow::createFloatingToolbar()
     connect(m_fileTransferBtn, &QPushButton::clicked, this, &ControlWindow::onFileTransferClicked);
     layout->addWidget(m_fileTransferBtn);
 
-    // OCR按钮
-    m_ocrBtn = new QPushButton("🔍 OCR", m_floatingToolbar);
-    m_ocrBtn->setToolTip("光学字符识别");
-    connect(m_ocrBtn, &QPushButton::clicked, this, &ControlWindow::onOcrClicked);
-    layout->addWidget(m_ocrBtn);
-
     // 设置工具栏可移动
     m_floatingToolbar->setMouseTracking(true);
     m_floatingToolbar->setAttribute(Qt::WA_TransparentForMouseEvents, false);
@@ -770,15 +760,4 @@ void ControlWindow::onFileTransferClicked()
     fileWindow->activateWindow();
 
     LOG_INFO("Independent file transfer window opened");
-}
-
-void ControlWindow::onOcrClicked()
-{
-    // TODO: 实现OCR功能
-    LOG_INFO("OCR functionality not implemented yet");
-
-    // 临时显示提示
-    m_ocrBtn->setText("🚧 开发中");
-    QTimer::singleShot(1500, [this]()
-                       { m_ocrBtn->setText("🔍 OCR"); });
 }

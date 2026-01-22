@@ -68,7 +68,6 @@ private:
     QFrame *m_floatingToolbar;
     QPushButton *m_screenshotBtn;
     QPushButton *m_fileTransferBtn;
-    QPushButton *m_ocrBtn;
     
     // 工具栏拖拽相关
     bool m_draggingToolbar;
@@ -84,7 +83,6 @@ public slots:
     // 工具栏按钮槽函数
     void onScreenshotClicked();
     void onFileTransferClicked();
-    void onOcrClicked();
     
 private slots:
     void adjustWindowSizeToVideo(const QSize &videoSize); // 根据视频尺寸调整窗口大小

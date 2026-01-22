@@ -33,7 +33,7 @@ AiRanDesk 是一个基于 WebRTC 技术的远程桌面控制应用程序，支�
 - **[libdatachannel](https://github.com/paullouisageneau/libdatachannel)** - WebRTC 数据通道实现
 - **[spdlog](https://github.com/gabime/spdlog)** - 快速 C++ 日志库
 - **[ffmpeg](https://github.com/FFmpeg/FFmpeg)** - 多媒体框架，用于音视频编解码
-- **[FFmpeg-Builds](https://github.com/BtbN/FFmpeg-Builds.git) ** - 打包完成的 ffmpeg 库
+- **[FFmpeg-Builds](https://github.com/BtbN/FFmpeg-Builds.git)** - 打包完成的 ffmpeg 库
 
 ## 构建指南
 

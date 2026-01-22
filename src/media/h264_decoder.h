@@ -40,7 +40,6 @@ public:
     // 错误恢复
     void flushDecoder();          // 刷新解码器缓冲区
     void resetDecoder();          // 重置解码器状态
-    bool isWaitingForKeyFrame();  // 检查是否在等待关键帧
     
     // 检查硬件加速支持
     static QStringList getAvailableHWAccels();
@@ -75,7 +74,6 @@ private:
     bool m_initialized;
     
     // 错误恢复和状态管理
-    bool m_waitingForKeyFrame;    // 是否在等待关键帧
     int m_consecutiveErrors;      // 连续错误计数
 };
 

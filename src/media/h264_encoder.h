@@ -31,10 +31,10 @@ public:
   // 初始化编码器
   bool initialize(int width, int height, int fps = 30, int bitrate = 2000000);
 
-  void forceKeyFrame();
   // 编码QImage为H264数据
-  rtc::binary encodeFrame(const QImage &image);
+  std::pair<rtc::binary, quint64> encodeFrame(const QImage &image);
 
+  void reset();
   // 释放资源
   void cleanup();
 
@@ -47,15 +47,6 @@ private:
   bool initializeQSV(); // QSV专用初始化
   AVFrame *qimageToAVFrame(const QImage &image);
   AVFrame *transferToHardware(AVFrame *swFrame);
-  rtc::binary avpacketToBinary(AVPacket *packet);
-
-  // Annex-B 兼容：把可能是 AVCC/长度前缀 的 H264 输出统一转为 Annex-B（起始码 0x00000001）
-  bool initAnnexBBsf();
-  rtc::binary packetToAnnexBBinary(const AVPacket *packet, bool forcePrependExtradata = false);
-
-  // 兜底：当关键帧里缺 SPS/PPS 时，从编码器 extradata 生成 Annex-B 并前置
-  rtc::binary getAnnexBExtradata() const;
-  static bool annexBContainsSpsPps(const rtc::binary &annexb);
 
   // FFmpeg 组件
   AVCodecContext *m_codecContext;
@@ -72,6 +63,7 @@ private:
   int m_height;
   int m_fps;
   int m_bitrate;
+  int m_pts;
 
   // 编码状态
   int m_frameCount; // 已编码帧数
@@ -84,11 +76,6 @@ private:
   enum AVPixelFormat m_hwPixelFormat;
 
   bool m_initialized;
-  bool m_forceKeyFrame;
-
-  // SwsContext 输入尺寸缓存（避免使用 static 导致多实例互相污染）
-  int m_lastSwsInputWidth = -1;
-  int m_lastSwsInputHeight = -1;
 };
 
 #endif // H264_ENCODER_H

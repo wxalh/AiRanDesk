@@ -22,7 +22,7 @@
 // 视频捕获工作者实现
 CaptureWorker::CaptureWorker(QObject *parent)
     : QObject(parent), m_running(false), m_width(1920), m_height(1080), m_fps(10),
-      m_lastFrameTime(0), m_forceKeyFrame(false), m_encoder(nullptr), m_captureTimer(nullptr)
+      m_lastFrameTime(0), m_encoder(nullptr), m_captureTimer(nullptr)
 {
     // 获取实际屏幕分辨率
     QScreen *screen = QGuiApplication::primaryScreen();
@@ -48,47 +48,44 @@ void CaptureWorker::startCapture(int width, int height, int fps)
     m_fps = fps;
 
     // 初始化H264编码器（启用硬件加速）
-    if (m_encoder)
+    // 设置高质量编码参数
+    int bitrate = width * height * fps * 0.1; // 自适应码率
+    m_encoder->reset();                       // 重置PTS和帧数量计数器
+    // 尝试启用硬件加速编码
+    QStringList availableAccels = H264Encoder::getAvailableHWAccels();
+    bool encoderInitialized = false;
+
+    if (!availableAccels.isEmpty())
     {
-        // 设置高质量编码参数
-        int bitrate = width * height * fps * 0.1; // 自适应码率
+        LOG_INFO("Available hardware encoders: {}", availableAccels.join(", "));
 
-        // 尝试启用硬件加速编码
-        QStringList availableAccels = H264Encoder::getAvailableHWAccels();
-        bool encoderInitialized = false;
-
-        if (!availableAccels.isEmpty())
+        for (const QString &preferred : availableAccels)
         {
-            LOG_INFO("Available hardware encoders: {}", availableAccels.join(", "));
-
-            for (const QString &preferred : availableAccels)
+            LOG_INFO("Attempting to initialize H264 encoder with {} acceleration", preferred);
+            if (m_encoder->initialize(width, height, fps, bitrate))
             {
-                LOG_INFO("Attempting to initialize H264 encoder with {} acceleration", preferred);
-                if (m_encoder->initialize(width, height, fps, bitrate))
-                {
-                    LOG_INFO("Successfully initialized H264 encoder with {} hardware acceleration", preferred);
-                    encoderInitialized = true;
-                    break;
-                }
-                else
-                {
-                    LOG_WARN("Failed to initialize H264 encoder with {} acceleration", preferred);
-                }
-            }
-        }
-
-        // 如果硬件加速失败，使用软件编码
-        if (!encoderInitialized)
-        {
-            LOG_INFO("Falling back to software H264 encoding");
-            if (!m_encoder->initialize(width, height, fps, bitrate))
-            {
-                LOG_ERROR("Failed to initialize H264 encoder even with software encoding");
+                LOG_INFO("Successfully initialized H264 encoder with {} hardware acceleration", preferred);
+                encoderInitialized = true;
+                break;
             }
             else
             {
-                LOG_INFO("Successfully initialized H264 encoder with software encoding");
+                LOG_WARN("Failed to initialize H264 encoder with {} acceleration", preferred);
             }
+        }
+    }
+
+    // 如果硬件加速失败，使用软件编码
+    if (!encoderInitialized)
+    {
+        LOG_INFO("Falling back to software H264 encoding");
+        if (!m_encoder->initialize(width, height, fps, bitrate))
+        {
+            LOG_ERROR("Failed to initialize H264 encoder even with software encoding");
+        }
+        else
+        {
+            LOG_INFO("Successfully initialized H264 encoder with software encoding");
         }
     }
 
@@ -125,61 +122,36 @@ void CaptureWorker::captureFrame()
         return;
 
     // 截图并编码为H264
-    rtc::binary h264Data = captureScreenH264();
+    auto [h264Data, timestamp_us] = captureScreenH264();
     if (!h264Data.empty())
     {
         QMutexLocker locker(&m_mutex);
         m_lastFrameTime = QDateTime::currentMSecsSinceEpoch();
         locker.unlock();
 
-        emit frameReady(h264Data);
+        emit frameReady(h264Data, timestamp_us);
         LOG_DEBUG("Captured and sent video frame: {}", Convert::formatFileSize(h264Data.size()));
     }
 }
 
-rtc::binary CaptureWorker::captureScreenH264()
+std::pair<rtc::binary, quint64> CaptureWorker::captureScreenH264()
 {
     QScreen *screen = QGuiApplication::primaryScreen();
     if (!screen || !m_encoder)
     {
-        return rtc::binary();
+        return {rtc::binary(), 0};
     }
 
     // 截取完整屏幕
     QPixmap pixmap = screen->grabWindow(0);
     if (pixmap.isNull())
     {
-        return rtc::binary();
+        return {rtc::binary(), 0};
     }
-
-    // 检查是否需要强制生成关键帧
-    bool forceKey = false;
-    {
-        QMutexLocker locker(&m_mutex);
-        if (m_forceKeyFrame)
-        {
-            m_forceKeyFrame = false; // 重置标志
-            forceKey = true;
-        }
-    }
-
-    if (forceKey)
-    {
-        m_encoder->forceKeyFrame();
-        LOG_INFO("🔑 Generated key frame in response to request");
-    }
-
     // 转换为QImage
     QImage image = pixmap.toImage();
     // 使用H264编码器编码（编码器已经用m_width和m_height初始化）
     return m_encoder->encodeFrame(image);
-}
-
-void CaptureWorker::forceKeyFrame()
-{
-    QMutexLocker locker(&m_mutex);
-    m_forceKeyFrame = true;
-    LOG_INFO("🔑 Key frame requested for next capture");
 }
 
 void CaptureWorker::setResolution(int width, int height)
@@ -193,16 +165,6 @@ void CaptureWorker::setResolution(int width, int height)
         m_height = height;
         LOG_INFO("📺 CaptureWorker: Resolution changed from {}x{} to {}x{}",
                  oldWidth, oldHeight, width, height);
-
-        // 采用更稳定的策略：不重新初始化编码器，而是保持编码器使用标准分辨率
-        // 在captureScreenH264中进行图像缩放，这样可以避免编码器重新初始化的复杂性
-        if (m_running)
-        {
-            // 强制生成关键帧以立即应用新分辨率的视频流
-            m_forceKeyFrame = true;
-            LOG_INFO("📺 Resolution change applied via image scaling, encoder remains at stable resolution");
-            LOG_INFO("📺 New frames will be scaled from screen resolution to {}x{} before encoding", width, height);
-        }
     }
 }
 
@@ -537,7 +499,7 @@ void MediaCapture::startCapture(int width, int height, int fps)
     m_fps = qMax(1, qMin(fps, 60)); // 限制帧率在1-60之间
 
     // 创建工作线程
-    m_captureThread = new QThread(this);
+    m_captureThread = new QThread();
 
     // 创建工作对象
     m_captureWorker = new CaptureWorker();
@@ -548,7 +510,6 @@ void MediaCapture::startCapture(int width, int height, int fps)
     // 连接信号和槽
     connect(this, &MediaCapture::startVideoCapture, m_captureWorker, &CaptureWorker::startCapture);
     connect(this, &MediaCapture::stopVideoCapture, m_captureWorker, &CaptureWorker::stopCapture);
-    connect(this, &MediaCapture::requestKeyFrameSignal, m_captureWorker, &CaptureWorker::forceKeyFrame);
     connect(this, &MediaCapture::setResolutionSignal, m_captureWorker, &CaptureWorker::setResolution);
     connect(this, &MediaCapture::setFpsSignal, m_captureWorker, &CaptureWorker::setFps);
     connect(m_captureWorker, &CaptureWorker::frameReady, this, &MediaCapture::onCaptureFrameReady);
@@ -603,7 +564,7 @@ void MediaCapture::startAudioCapture(int sampleRate, int channels)
     }
 
     // 创建工作线程
-    m_audioCaptureThread = new QThread(this);
+    m_audioCaptureThread = new QThread();
 
     // 创建工作对象
     m_audioCaptureWorker = new AudioCaptureWorker();
@@ -658,7 +619,7 @@ void MediaCapture::stopAudioCapture()
     }
 }
 
-void MediaCapture::onCaptureFrameReady(const rtc::binary &h264Data)
+void MediaCapture::onCaptureFrameReady(const rtc::binary &h264Data, quint64 timestamp_us)
 {
     if (!m_isCapturing)
     {
@@ -669,7 +630,7 @@ void MediaCapture::onCaptureFrameReady(const rtc::binary &h264Data)
     LOG_DEBUG("MediaCapture received H264 frame: {}", Convert::formatFileSize(h264Data.size()));
 
     // 直接发送H264数据，无需压缩
-    emit videoFrameReady(h264Data);
+    emit videoFrameReady(h264Data, timestamp_us);
 }
 
 void MediaCapture::onAudioFrameReady(const rtc::binary &audioData)
@@ -679,19 +640,6 @@ void MediaCapture::onAudioFrameReady(const rtc::binary &audioData)
 
     // 直接转发音频数据
     emit audioFrameReady(audioData);
-}
-
-void MediaCapture::requestKeyFrame()
-{
-    if (m_isCapturing && m_captureWorker)
-    {
-        LOG_INFO("🔑 MediaCapture: Requesting key frame from capture worker");
-        emit requestKeyFrameSignal();
-    }
-    else
-    {
-        LOG_WARN("Cannot request key frame - capture not active");
-    }
 }
 
 void MediaCapture::setResolution(int width, int height)

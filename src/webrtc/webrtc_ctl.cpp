@@ -26,8 +26,7 @@ WebRtcCtl::WebRtcCtl(const QString &remoteId, const QString &remotePwdMd5,
       m_remotePwdMd5(remotePwdMd5),
       m_connected(false),
       m_isOnlyFile(isOnlyFile),
-      m_adaptiveResolution(adaptiveResolution),
-      m_waitingForKeyFrame(true) // 初始时等待关键帧
+      m_adaptiveResolution(adaptiveResolution)
 {
     // 初始化ICE服务器配置
     m_host = ConfigUtil->ice_host.toStdString();
@@ -422,9 +421,6 @@ void WebRtcCtl::setupFileTextChannelCallbacks()
                         QString ctlPath = JsonUtil::getString(object, Constant::KEY_PATH_CTL);
                         emit recvDownloadFile(true, ctlPath);
                     }
-                } else if (object.contains("type") && JsonUtil::getString(object, "type") == Constant::TYPE_KEYFRAME_RESPONSE) {
-                    // 处理关键帧响应
-                    LOG_INFO("🔑 Received key frame response from remote");
                 } else {
                     // 处理其他文件相关响应
                     LOG_INFO("Emitting recvGetFileList signal for unknown type");
@@ -885,87 +881,14 @@ void WebRtcCtl::processVideoFrame(const rtc::binary &data, const rtc::FrameInfo 
 
     try
     {
-        // 限制解码频率，避免内存压力过大
-        static auto lastDecodeTime = std::chrono::steady_clock::now();
-        static int frameDropCount = 0;
-        static int minInterval = 1000 / ConfigUtil->fps; // 默认30fps
-        auto currentTime = std::chrono::steady_clock::now();
-        auto elapsed = std::chrono::duration_cast<std::chrono::milliseconds>(currentTime - lastDecodeTime);
-
-        if (elapsed.count() < minInterval)
-        {
-            frameDropCount++;
-            if (frameDropCount % 100 == 0)
-            {
-                LOG_DEBUG("Dropped {} frames to reduce memory pressure", frameDropCount);
-            }
-            return;
-        }
-        lastDecodeTime = currentTime;
-
         // 解码H264数据为QImage
         if (m_h264Decoder)
         {
-            // 解码器等待关键帧时：周期性请求关键帧（避免只触发一次，后续一直等不到 IDR）
-            if (m_h264Decoder->isWaitingForKeyFrame())
-            {
-                static auto lastKeyframeRequestTime = std::chrono::steady_clock::now() - std::chrono::seconds(10);
-                const auto now = std::chrono::steady_clock::now();
-                const auto gapMs = std::chrono::duration_cast<std::chrono::milliseconds>(now - lastKeyframeRequestTime).count();
-
-                // 这里用节流避免刷屏/打爆信令；可按需调小/调大
-                const int kRequestIntervalMs = 500;
-                if (gapMs >= kRequestIntervalMs)
-                {
-                    LOG_WARN("⚠️ Decoder is waiting for key frame (waitFlag={}, gapMs={}), requesting...", m_waitingForKeyFrame, (int)gapMs);
-
-                    // 1) 业务信令请求（datachannel）
-                    requestKeyFrame();
-
-                    // 2) WebRTC 原生 RTCP PLI/FIR 请求
-                    if (m_videoTrack)
-                    {
-                        try
-                        {
-                            LOG_DEBUG("Calling videoTrack->requestKeyframe()...");
-                            bool ok = m_videoTrack->requestKeyframe();
-                            LOG_INFO("Requested keyframe via videoTrack (RTCP PLI/FIR), ok={}", ok);
-                        }
-                        catch (const std::exception &e)
-                        {
-                            LOG_WARN("Failed to request keyframe via videoTrack: {}", e.what());
-                        }
-                    }
-                    else
-                    {
-                        LOG_DEBUG("videoTrack is null, skip requestKeyframe");
-                    }
-
-                    lastKeyframeRequestTime = now;
-                    m_waitingForKeyFrame = true;
-                }
-            }
-
             QImage decodedFrame = m_h264Decoder->decodeFrame(data);
             if (!decodedFrame.isNull())
             {
                 emit videoFrameDecoded(decodedFrame);
-                m_waitingForKeyFrame = false;
                 LOG_DEBUG("Successfully decoded video frame: {}x{}", decodedFrame.width(), decodedFrame.height());
-            }
-            else
-            {
-                // 解码失败处理 - 只在不是等待更多数据时请求关键帧
-                static int consecutiveFailures = 0;
-                consecutiveFailures++;
-
-                if (consecutiveFailures >= 5 && !m_waitingForKeyFrame)
-                {
-                    LOG_WARN("⚠️ {} consecutive decode failures, requesting key frame", consecutiveFailures);
-                    requestKeyFrame();
-                    m_waitingForKeyFrame = true;
-                    consecutiveFailures = 0;
-                }
             }
         }
         else
@@ -976,36 +899,5 @@ void WebRtcCtl::processVideoFrame(const rtc::binary &data, const rtc::FrameInfo 
     catch (const std::exception &e)
     {
         LOG_ERROR("Error processing video frame: {}", e.what());
-    }
-}
-
-// 请求关键帧
-void WebRtcCtl::requestKeyFrame()
-{
-    if (!m_inputChannel || !m_inputChannel->isOpen())
-    {
-        LOG_WARN("Input channel not available for key frame request");
-        return;
-    }
-
-    try
-    {
-        QJsonObject keyFrameRequest = JsonUtil::createObject()
-                                          .add(Constant::KEY_MSGTYPE, Constant::TYPE_KEYFRAME_REQUEST)
-                                          .add(Constant::KEY_SENDER, ConfigUtil->local_id)
-                                          .add(Constant::KEY_RECEIVER, m_remoteId)
-                                          .add(Constant::KEY_RECEIVER_PWD, m_remotePwdMd5)
-                                          .add("timestamp", QDateTime::currentMSecsSinceEpoch())
-                                          .add("reason", "network_error_recovery")
-                                          .build();
-
-        QString message = JsonUtil::toCompactString(keyFrameRequest);
-        m_inputChannel->send(message.toStdString());
-
-        LOG_INFO("🔑 Requested key frame for error recovery via inputChannel");
-    }
-    catch (const std::exception &e)
-    {
-        LOG_ERROR("Failed to send key frame request: {}", e.what());
     }
 }

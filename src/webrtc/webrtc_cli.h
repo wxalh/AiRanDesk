@@ -84,7 +84,7 @@ private:
     int m_fps; // 帧率
     // 媒体相关
     MediaCapture *m_mediaCapture;
-    qint64 m_baseTimestamp;
+    qint64 m_lastTimestamp; // 上次视频帧时间戳
 
     // 文件分包工具类
     FilePacketUtil *m_filePacketUtil;
@@ -108,8 +108,6 @@ signals:
     // 数据通道事件
     void destroyCli();
     
-    // 媒体控制事件
-    void requestKeyFrameFromCapture(); // 请求媒体捕获生成关键帧
 public slots:
     // 初始化WebRTC连接并创建所有通道
     void init();
@@ -117,7 +115,7 @@ public slots:
     void onWsCliRecvBinaryMsg(const QByteArray &message);
     void onWsCliRecvTextMsg(const QString &message);
 
-    void onVideoFrameReady(const rtc::binary &h264Data);
+    void onVideoFrameReady(const rtc::binary &h264Data, quint64 timestamp_us);
     void onAudioFrameReady(const rtc::binary &audioData);
 
     void handleFileReceived(bool status, const QString &tempPath);
